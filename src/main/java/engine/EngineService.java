@@ -108,15 +108,12 @@ public class EngineService {
 
         MessagesApp mapp = app(userId);
         Sequence seq = mapp.createEmptyMessage(mid);
-        if (minimal) {
-            seq = mapp.initialize(seq);
-        } else {
-            seq = mapp.randomize(seq);
-            // header: field(0)=protocolVersion, field(1)=messageID
-            i.Sequence header = (i.Sequence) seq.field(0).getElement();
-            ((i.Integer) header.field(0).getElement()).setValue(mid.getProtocolVersion());
-            ((i.Integer) header.field(1).getElement()).setValue(mid.getId());
-        }
+        seq = minimal ? mapp.initialize(seq) : mapp.randomize(seq);
+        // header: field(0)=protocolVersion, field(1)=messageID — set in both modes, otherwise
+        // initialize() leaves them at 0 and encoding fails the (1..n) constraint on messageID.
+        i.Sequence header = (i.Sequence) seq.field(0).getElement();
+        ((i.Integer) header.field(0).getElement()).setValue(mid.getProtocolVersion());
+        ((i.Integer) header.field(1).getElement()).setValue(mid.getId());
         Encoding enc = encoding(format);
         if (enc == null)
             enc = Encoding.UPER;
