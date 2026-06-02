@@ -53,6 +53,7 @@ public class EngineController {
         try {
             return ResponseEntity.ok(engine.generate(userId, mid, format, minimal));
         } catch (Exception e) {
+            e.printStackTrace();   // surface the full trace (which field/where), like before
             return ResponseEntity.badRequest().body("generate failed: " + e.getMessage());
         }
     }
