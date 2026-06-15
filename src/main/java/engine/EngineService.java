@@ -67,7 +67,7 @@ public class EngineService {
     // ---------------- convert ----------------
 
     /**
-     * Converts a payload between formats. If the message isn't loaded, returns notLoaded with the
+     * Converts a payload between formats. If the message isn't loaded, returns notFound with the
      * messageId so the caller can fetch + load it and retry. The messageId is taken from the
      * optional header, else read from the payload (extractMessageId handles UPER/WER/JSON/XML).
      */
@@ -85,8 +85,8 @@ public class EngineService {
                     : mapp.extractMessageId(payloadIn.getBytes(), fromEnc);
 
             if (mid == null || mid.isUnknown() || !isLoaded(userId, mid))
-                return EngineResult.notLoaded(mid == null ? 0 : mid.getId(),
-                                              mid == null ? 0 : mid.getProtocolVersion());
+                return EngineResult.notFound(mid == null ? 0 : mid.getId(),
+                                             mid == null ? 0 : mid.getProtocolVersion());
 
             Sequence sequence = mapp.createEmptyMessage(mid);
             sequence = mapp.decode(sequence, payloadIn);
@@ -100,25 +100,33 @@ public class EngineService {
 
     // ---------------- generate ----------------
 
-    /** Generates a sample payload (minimal or random) for a loaded message. */
-    public String generate(Long userId, String messageIdStr, String format, boolean minimal) throws WindException {
-        MessageId mid = MessageId.createFromStringId(messageIdStr);
-        if (mid.isUnknown())
-            throw new IllegalArgumentException("Unknown messageId(" + messageIdStr + ")");
+    /**
+     * Generates a sample payload (minimal or random). Symmetric with convert: if the message isn't
+     * loaded it returns notFound with the messageId so the caller can fetch + load it and retry.
+     */
+    public EngineResult generate(Long userId, String messageIdStr, String format, boolean minimal) {
+        try {
+            MessageId mid = MessageId.createFromStringId(messageIdStr);
+            if (mid == null || mid.isUnknown() || !isLoaded(userId, mid))
+                return EngineResult.notFound(mid == null ? 0 : mid.getId(),
+                                             mid == null ? 0 : mid.getProtocolVersion());
 
-        MessagesApp mapp = app(userId);
-        Sequence seq = mapp.createEmptyMessage(mid);
-        seq = minimal ? mapp.initialize(seq) : mapp.randomize(seq);
-        // header: field(0)=protocolVersion, field(1)=messageID — set in both modes, otherwise
-        // initialize() leaves them at 0 and encoding fails the (1..n) constraint on messageID.
-        i.Sequence header = (i.Sequence) seq.field(0).getElement();
-        ((i.Integer) header.field(0).getElement()).setValue(mid.getProtocolVersion());
-        ((i.Integer) header.field(1).getElement()).setValue(mid.getId());
-        Encoding enc = encoding(format);
-        if (enc == null)
-            enc = Encoding.UPER;
-        Payload payload = mapp.encode(seq, enc);
-        return (enc.isXML() || enc.isJSON()) ? payload.toText() : payload.getHexWithEncoding();
+            MessagesApp mapp = app(userId);
+            Sequence seq = mapp.createEmptyMessage(mid);
+            seq = minimal ? mapp.initialize(seq) : mapp.randomize(seq);
+            // header: field(0)=protocolVersion, field(1)=messageID — set explicitly to the requested mid.
+            i.Sequence header = (i.Sequence) seq.field(0).getElement();
+            ((i.Integer) header.field(0).getElement()).setValue(mid.getProtocolVersion());
+            ((i.Integer) header.field(1).getElement()).setValue(mid.getId());
+            Encoding enc = encoding(format);
+            if (enc == null)
+                enc = Encoding.UPER;
+            Payload payload = mapp.encode(seq, enc);
+            String data = (enc.isXML() || enc.isJSON()) ? payload.toText() : payload.getHexWithEncoding();
+            return EngineResult.ok(data);
+        } catch (WindException | RuntimeException e) {
+            return EngineResult.decodeError(String.valueOf(e.getMessage()));
+        }
     }
 
     private static Encoding encoding(String format) {

@@ -6,7 +6,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * Typed result of a conversion, serialized as the /engine/convert response body. Carries no
  * wind types, so the caller (the backend hub) reacts to it without knowing anything about V2X.
  *
- * {"status":"ok","data":...} | {"status":"notLoaded","messageId":2,"protocolVersion":5} | {"status":"decodeError","error":...}
+ * {"status":"ok","data":...} | {"status":"notFound","messageId":2,"protocolVersion":5} | {"status":"decodeError","error":...}
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class EngineResult {
@@ -24,9 +24,9 @@ public class EngineResult {
         return r;
     }
 
-    public static EngineResult notLoaded(int messageId, int protocolVersion) {
+    public static EngineResult notFound(int messageId, int protocolVersion) {
         EngineResult r = new EngineResult();
-        r.status = "notLoaded";
+        r.status = "notFound";
         r.messageId = messageId;
         r.protocolVersion = protocolVersion;
         return r;

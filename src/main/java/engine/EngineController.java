@@ -43,19 +43,14 @@ public class EngineController {
         return engine.convert(userId, payload, from, to, messageId);
     }
 
-    /** Generate a sample payload (minimal or random) for a loaded message. */
+    /** Generate a sample payload (minimal or random). Typed result, like convert. */
     @GetMapping("/generate")
-    public ResponseEntity<String> generate(
+    public EngineResult generate(
             @RequestHeader(value = "X-User-Id", defaultValue = "0") Long userId,
             @RequestParam String mid,
             @RequestParam(defaultValue = "UPER") String format,
             @RequestParam(defaultValue = "false") boolean minimal) {
-        try {
-            return ResponseEntity.ok(engine.generate(userId, mid, format, minimal));
-        } catch (Exception e) {
-            e.printStackTrace();   // surface the full trace (which field/where), like before
-            return ResponseEntity.badRequest().body("generate failed: " + e.getMessage());
-        }
+        return engine.generate(userId, mid, format, minimal);
     }
 
     /** List the messages loaded for a user. */

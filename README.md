@@ -14,7 +14,7 @@ Spring Boot · Java 17 · the wind jars are committed under `libs/` (system scop
 |---|---|---|---|
 | `POST` | `/engine/load` | `X-Message-Id` + body = definition JSON | registers the definition |
 | `POST` | `/engine/convert` | `?from=&to=` + `[X-Message-Id]` + body = payload | `{status:"ok",data}` \| `{status:"notLoaded",messageId,protocolVersion}` \| `{status:"decodeError",error}` (always HTTP 200) |
-| `GET` | `/engine/generate` | `?mid=2:2&format=UPER&minimal=` | a sample payload of a loaded message |
+| `GET` | `/engine/generate` | `?mid=2:2&format=UPER&minimal=` | `{status:"ok",data}` \| `{status:"notFound",messageId,protocolVersion}` \| `{status:"decodeError",error}` (always HTTP 200) |
 | `GET` | `/engine/messages` | — | list of loaded messages |
 | `DELETE` | `/engine/messages` | — | evict (clear) |
 
