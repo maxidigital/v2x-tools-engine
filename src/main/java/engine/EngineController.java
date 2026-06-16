@@ -43,14 +43,24 @@ public class EngineController {
         return engine.convert(userId, payload, from, to, messageId);
     }
 
-    /** Generate a sample payload (minimal or random). Typed result, like convert. */
+    /** Generate a sample payload (minimal or random). Typed result, like convert.
+     *  {@code size} (SMALLEST..BIGGEST, default SMALL) controls the random sample size. */
     @GetMapping("/generate")
     public EngineResult generate(
             @RequestHeader(value = "X-User-Id", defaultValue = "0") Long userId,
             @RequestParam String mid,
             @RequestParam(defaultValue = "UPER") String format,
-            @RequestParam(defaultValue = "false") boolean minimal) {
-        return engine.generate(userId, mid, format, minimal);
+            @RequestParam(defaultValue = "false") boolean minimal,
+            @RequestParam(defaultValue = "SMALL") String size) {
+        return engine.generate(userId, mid, format, minimal, parseSize(size));
+    }
+
+    private static a.enums.RandomSize parseSize(String s) {
+        try {
+            return a.enums.RandomSize.valueOf(s.trim().toUpperCase());
+        } catch (RuntimeException e) {
+            return a.enums.RandomSize.SMALL;
+        }
     }
 
     /** List the messages loaded for a user. */

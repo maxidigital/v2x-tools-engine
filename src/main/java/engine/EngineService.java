@@ -104,7 +104,8 @@ public class EngineService {
      * Generates a sample payload (minimal or random). Symmetric with convert: if the message isn't
      * loaded it returns notFound with the messageId so the caller can fetch + load it and retry.
      */
-    public EngineResult generate(Long userId, String messageIdStr, String format, boolean minimal) {
+    public EngineResult generate(Long userId, String messageIdStr, String format, boolean minimal,
+            a.enums.RandomSize size) {
         try {
             MessageId mid = MessageId.createFromStringId(messageIdStr);
             if (mid == null || mid.isUnknown() || !isLoaded(userId, mid))
@@ -113,7 +114,8 @@ public class EngineService {
 
             MessagesApp mapp = app(userId);
             Sequence seq = mapp.createEmptyMessage(mid);
-            seq = minimal ? mapp.initialize(seq) : mapp.randomize(seq);
+            // random size controls optional-field presence + SEQUENCE OF lengths (sample size)
+            seq = minimal ? mapp.initialize(seq) : mapp.randomize(seq, size);
             // header: field(0)=protocolVersion, field(1)=messageID — set explicitly to the requested mid.
             i.Sequence header = (i.Sequence) seq.field(0).getElement();
             ((i.Integer) header.field(0).getElement()).setValue(mid.getProtocolVersion());
