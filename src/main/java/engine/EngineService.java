@@ -1,98 +1,111 @@
 package engine;
 
-import a.MessageId;
 import a.enums.Encoding;
+import a.enums.RandomSize;
 import a.messages.Payload;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import de.dlr.ts.v2x.commons.translators.MessagesApp;
 import de.dlr.ts.v2x.wind_generic.WindGeneric;
 import de.dlr.ts.v2x.wind_model.MessageDefinition;
 import de.dlr.ts.v2x.wind_model.WindMessageCodec;
-import i.Sequence;
 import i.WindException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 import org.springframework.stereotype.Service;
 import wind_parser.i.ParserSequence;
 
 /**
- * The V2X core. Holds, per user, an in-memory MessagesApp with the loaded message definitions,
- * and converts / generates payloads over it. No TTL: a loaded message stays until restart or evict.
- * This is the only place that touches "wind".
+ * The V2X core, as a universal codec. Holds a content-addressed cache of compiled definitions keyed by
+ * {@code engineId = hash(tree + metadata)} (no users, no messageId routing). Each loaded definition keeps
+ * a factory (build a fresh generic instance), a human description, and its sticky fixups. convert/generate
+ * take the engineId explicitly. This is the only place that touches "wind".
  */
 @Service
 public class EngineService {
 
     private final WindMessageCodec codec = new WindMessageCodec();
-    private final Map<Long, MessagesApp> engines = new ConcurrentHashMap<>();
-    private final Map<Long, Set<String>> loadedMids = new ConcurrentHashMap<>();    // "id:prot"
-    private final Map<Long, Set<String>> loadedAliases = new ConcurrentHashMap<>();
+    private final ObjectMapper mapper = new ObjectMapper();
+    // MessagesApp holds mutable per-operation state (randomizers, etc.) -> one per thread, reused.
+    private final ThreadLocal<MessagesApp> mapp = ThreadLocal.withInitial(MessagesApp::create);
 
-    private MessagesApp app(Long userId) {
-        return engines.computeIfAbsent(userId, id -> MessagesApp.create());
-    }
+    private final Map<String, CachedDef> cache = new ConcurrentHashMap<>();
 
-    private static String key(MessageId mid) {
-        return mid.getId() + ":" + mid.getProtocolVersion();
+    private static final class CachedDef {
+        final Supplier<i.Sequence> factory;   // builds a fresh generic instance
+        final String description;
+        final List<PathValue> fixups;
+        CachedDef(Supplier<i.Sequence> factory, String description, List<PathValue> fixups) {
+            this.factory = factory;
+            this.description = description;
+            this.fixups = fixups;
+        }
     }
 
     // ---------------- load ----------------
 
-    /** Parses a digested definition (eager) and registers it for the user, keyed by its messageId. */
-    public void load(Long userId, String definitionJson) {
-        MessageDefinition def = codec.parse(definitionJson);
-        ParserSequence root = def.rootSequence();
-        MessageId mid = MessageId.create(def.getMessageId(), def.getProtocolVersion());
-        app(userId).registerMessage(mid, () -> WindGeneric.build(root));
-        loadedMids.computeIfAbsent(userId, id -> ConcurrentHashMap.newKeySet()).add(key(mid));
-        if (def.getAlias() != null)
-            loadedAliases.computeIfAbsent(userId, id -> ConcurrentHashMap.newKeySet()).add(def.getAlias());
+    /** Compiles (tree + metadata) and caches it under engineId = hash(tree+metadata); returns engineId. */
+    public String load(String treeJson, String metadataJson) {
+        LoadMetadata meta = parseMetadata(metadataJson);
+        String engineId = sha256(treeJson + "\n" + (metadataJson == null ? "" : metadataJson));
+        cache.computeIfAbsent(engineId, k -> compile(treeJson, meta));
+        return engineId;
     }
 
-    public boolean isLoaded(Long userId, MessageId mid) {
-        return loadedMids.getOrDefault(userId, Set.of()).contains(key(mid));
+    private CachedDef compile(String treeJson, LoadMetadata meta) {
+        MessageDefinition def = codec.parse(treeJson);
+        final ParserSequence root = def.rootSequence();
+        Supplier<i.Sequence> factory = () -> WindGeneric.build(root);
+
+        List<PathValue> fixups = meta.fixups != null ? meta.fixups : List.of();
+        if (!fixups.isEmpty()) {
+            // fail-fast: validate every fixup path against a sample instance now, not at generate time.
+            i.Sequence sample = factory.get();
+            for (PathValue f : fixups) {
+                try {
+                    PathResolver.validate(sample, f.path);
+                } catch (RuntimeException e) {
+                    throw new IllegalArgumentException("invalid fixup path '" + f.path + "': " + e.getMessage());
+                }
+            }
+        }
+        return new CachedDef(factory, meta.description, fixups);
     }
 
-    public List<String> loaded(Long userId) {
-        return List.copyOf(loadedAliases.getOrDefault(userId, Set.of()));
+    public List<Loaded> loaded() {
+        List<Loaded> out = new ArrayList<>();
+        cache.forEach((id, cd) -> out.add(new Loaded(id, cd.description)));
+        return out;
     }
 
-    public void evict(Long userId) {
-        engines.remove(userId);
-        loadedMids.remove(userId);
-        loadedAliases.remove(userId);
+    public boolean evict(String engineId) {
+        return cache.remove(engineId) != null;
     }
 
     // ---------------- convert ----------------
 
-    /**
-     * Converts a payload between formats. If the message isn't loaded, returns notFound with the
-     * messageId so the caller can fetch + load it and retry. The messageId is taken from the
-     * optional header, else read from the payload (extractMessageId handles UPER/WER/JSON/XML).
-     */
-    public EngineResult convert(Long userId, String input, String from, String to, String messageIdHeader) {
+    /** Converts a payload using the definition identified by engineId. The caller says which (no routing). */
+    public EngineResult convert(String engineId, byte[] payload, boolean binaryIn, String from, String to) {
+        CachedDef cd = cache.get(engineId);
+        if (cd == null)
+            return EngineResult.engineNotFound(engineId);
         Encoding fromEnc = encoding(from);
         Encoding toEnc = encoding(to);
         if (fromEnc == null || toEnc == null)
             return EngineResult.decodeError("unsupported format conversion: " + from + " -> " + to);
-
         try {
-            MessagesApp mapp = app(userId);
-            Payload payloadIn = Payload.create(input, fromEnc);
-            MessageId mid = (messageIdHeader != null && !messageIdHeader.isBlank())
-                    ? MessageId.createFromStringId(messageIdHeader)
-                    : mapp.extractMessageId(payloadIn.getBytes(), fromEnc);
-
-            if (mid == null || mid.isUnknown() || !isLoaded(userId, mid))
-                return EngineResult.notFound(mid == null ? 0 : mid.getId(),
-                                             mid == null ? 0 : mid.getProtocolVersion());
-
-            Sequence sequence = mapp.createEmptyMessage(mid);
-            sequence = mapp.decode(sequence, payloadIn);
-            Payload payloadOut = mapp.encode(sequence, toEnc);
-            String data = (toEnc.isUPER() || toEnc.isWER()) ? payloadOut.getHexWithEncoding() : payloadOut.toText();
-            return EngineResult.ok(data);
+            Payload in = binaryIn
+                    ? Payload.create(payload, fromEnc)
+                    : Payload.create(new String(payload, StandardCharsets.UTF_8), fromEnc);
+            i.Sequence seq = cd.factory.get();
+            seq = mapp.get().decode(seq, in);
+            Payload out = mapp.get().encode(seq, toEnc);
+            return EngineResult.ok(format(out, toEnc));
         } catch (WindException | RuntimeException e) {
             return EngineResult.decodeError(String.valueOf(e.getMessage()));
         }
@@ -100,34 +113,56 @@ public class EngineService {
 
     // ---------------- generate ----------------
 
-    /**
-     * Generates a sample payload (minimal or random). Symmetric with convert: if the message isn't
-     * loaded it returns notFound with the messageId so the caller can fetch + load it and retry.
-     */
-    public EngineResult generate(Long userId, String messageIdStr, String format, boolean minimal,
-            a.enums.RandomSize size) {
+    /** Generates a sample; applies sticky fixups, then one-shot overrides (overrides win on conflict). */
+    public EngineResult generate(String engineId, GenerateOptions opts) {
+        CachedDef cd = cache.get(engineId);
+        if (cd == null)
+            return EngineResult.engineNotFound(engineId);
         try {
-            MessageId mid = MessageId.createFromStringId(messageIdStr);
-            if (mid == null || mid.isUnknown() || !isLoaded(userId, mid))
-                return EngineResult.notFound(mid == null ? 0 : mid.getId(),
-                                             mid == null ? 0 : mid.getProtocolVersion());
-
-            MessagesApp mapp = app(userId);
-            Sequence seq = mapp.createEmptyMessage(mid);
-            // random size controls optional-field presence + SEQUENCE OF lengths (sample size)
-            seq = minimal ? mapp.initialize(seq) : mapp.randomize(seq, size);
-            // header: field(0)=protocolVersion, field(1)=messageID — set explicitly to the requested mid.
-            i.Sequence header = (i.Sequence) seq.field(0).getElement();
-            ((i.Integer) header.field(0).getElement()).setValue(mid.getProtocolVersion());
-            ((i.Integer) header.field(1).getElement()).setValue(mid.getId());
-            Encoding enc = encoding(format);
+            Encoding enc = encoding(opts.format);
             if (enc == null)
                 enc = Encoding.UPER;
-            Payload payload = mapp.encode(seq, enc);
-            String data = (enc.isXML() || enc.isJSON()) ? payload.toText() : payload.getHexWithEncoding();
-            return EngineResult.ok(data);
+            i.Sequence seq = cd.factory.get();
+            RandomSize size = opts.size != null ? opts.size : RandomSize.SMALL;
+            seq = opts.minimal ? mapp.get().initialize(seq) : mapp.get().randomize(seq, size);
+            applyAll(seq, cd.fixups);            // sticky
+            applyAll(seq, opts.overrides);       // one-shot (override the fixups if same path)
+            Payload payload = mapp.get().encode(seq, enc);
+            return EngineResult.ok(format(payload, enc));
         } catch (WindException | RuntimeException e) {
             return EngineResult.decodeError(String.valueOf(e.getMessage()));
+        }
+    }
+
+    private static void applyAll(i.Sequence seq, List<PathValue> pvs) {
+        if (pvs == null)
+            return;
+        for (PathValue pv : pvs)
+            PathResolver.apply(seq, pv.path, pv.value);
+    }
+
+    // ---------------- helpers ----------------
+
+    private static String format(Payload p, Encoding enc) {
+        return (enc.isUPER() || enc.isWER()) ? p.getHexWithEncoding() : p.toText();
+    }
+
+    private LoadMetadata parseMetadata(String json) {
+        if (json == null || json.isBlank())
+            return new LoadMetadata();
+        try {
+            return mapper.readValue(json, LoadMetadata.class);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("invalid metadata: " + e.getMessage());
+        }
+    }
+
+    private static String sha256(String s) {
+        try {
+            byte[] h = MessageDigest.getInstance("SHA-256").digest(s.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(h).substring(0, 32);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
 

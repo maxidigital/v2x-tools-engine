@@ -3,18 +3,17 @@ package engine;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 /**
- * Typed result of a conversion, serialized as the /engine/convert response body. Carries no
- * wind types, so the caller (the backend hub) reacts to it without knowing anything about V2X.
+ * Typed result of a convert/generate, serialized as the response body. Carries no wind types, so the
+ * caller (the hub) reacts without knowing V2X.
  *
- * {"status":"ok","data":...} | {"status":"notFound","messageId":2,"protocolVersion":5} | {"status":"decodeError","error":...}
+ * {"status":"ok","data":...} | {"status":"engineNotFound","engineId":"..."} | {"status":"decodeError","error":...}
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class EngineResult {
 
     private String status;
     private String data;
-    private Integer messageId;
-    private Integer protocolVersion;
+    private String engineId;
     private String error;
 
     public static EngineResult ok(String data) {
@@ -24,11 +23,11 @@ public class EngineResult {
         return r;
     }
 
-    public static EngineResult notFound(int messageId, int protocolVersion) {
+    /** The engineId is not loaded (never loaded, or evicted): the hub must re-supply and retry. */
+    public static EngineResult engineNotFound(String engineId) {
         EngineResult r = new EngineResult();
-        r.status = "notFound";
-        r.messageId = messageId;
-        r.protocolVersion = protocolVersion;
+        r.status = "engineNotFound";
+        r.engineId = engineId;
         return r;
     }
 
@@ -39,9 +38,11 @@ public class EngineResult {
         return r;
     }
 
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    public boolean isOk() { return "ok".equals(status); }
+
     public String getStatus() { return status; }
     public String getData() { return data; }
-    public Integer getMessageId() { return messageId; }
-    public Integer getProtocolVersion() { return protocolVersion; }
+    public String getEngineId() { return engineId; }
     public String getError() { return error; }
 }
