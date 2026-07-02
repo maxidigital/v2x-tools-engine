@@ -17,6 +17,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import wind_parser.i.ParserSequence;
 
@@ -36,10 +38,15 @@ public class EngineService {
 
     private final Map<String, CachedDef> cache = new ConcurrentHashMap<>();
 
+    /** Evict a loaded definition after this many minutes with no convert/generate touching it. */
+    @Value("${engine.cache.ttl-minutes:60}")
+    private long ttlMinutes;
+
     private static final class CachedDef {
         final Supplier<i.Sequence> factory;   // builds a fresh generic instance
         final String description;
         final List<PathValue> fixups;
+        volatile long lastAccessMs = System.currentTimeMillis();   // reset on each access; drives the idle TTL
         CachedDef(Supplier<i.Sequence> factory, String description, List<PathValue> fixups) {
             this.factory = factory;
             this.description = description;
@@ -87,11 +94,28 @@ public class EngineService {
         return cache.remove(engineId) != null;
     }
 
+    /** Fetches a loaded def and marks it just-used (resets its idle TTL). Null if not loaded. */
+    private CachedDef access(String engineId) {
+        CachedDef cd = cache.get(engineId);
+        if (cd != null) cd.lastAccessMs = System.currentTimeMillis();
+        return cd;
+    }
+
+    /**
+     * Evicts definitions idle longer than the TTL, freeing memory. Safe: a later request for an evicted
+     * engineId yields {@code engineNotFound}, and the hub reloads the same (deterministic) engineId and retries.
+     */
+    @Scheduled(fixedDelayString = "${engine.cache.sweep-ms:600000}")
+    void sweepIdle() {
+        long cutoff = System.currentTimeMillis() - ttlMinutes * 60_000L;
+        cache.entrySet().removeIf(e -> e.getValue().lastAccessMs < cutoff);
+    }
+
     // ---------------- convert ----------------
 
     /** Converts a payload using the definition identified by engineId. The caller says which (no routing). */
     public EngineResult convert(String engineId, byte[] payload, boolean binaryIn, String from, String to) {
-        CachedDef cd = cache.get(engineId);
+        CachedDef cd = access(engineId);
         if (cd == null)
             return EngineResult.engineNotFound(engineId);
         Encoding fromEnc = encoding(from);
@@ -115,7 +139,7 @@ public class EngineService {
 
     /** Generates a sample; applies sticky fixups, then one-shot overrides (overrides win on conflict). */
     public EngineResult generate(String engineId, GenerateOptions opts) {
-        CachedDef cd = cache.get(engineId);
+        CachedDef cd = access(engineId);
         if (cd == null)
             return EngineResult.engineNotFound(engineId);
         try {

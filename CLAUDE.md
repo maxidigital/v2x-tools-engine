@@ -30,8 +30,11 @@ status; ante `engineNotFound` recarga y reintenta).
 |---|---|
 | `PORT` | Puerto que bindea Tomcat (8090). |
 | `server.address=::` | **Bindea IPv6** (la red privada Railway entre servicios es IPv6-only; ver gotcha). |
+| `engine.cache.ttl-minutes` | TTL **idle** de cada def cargada (default `60`). Se resetea en cada convert/generate. |
+| `engine.cache.sweep-ms` | Cada cuánto corre el sweeper que evicta las idle (default `600000` = 10 min). |
 
-Sin DB. Estado en memoria (cache `engineId → definición cargada`).
+Sin DB. Estado en memoria (cache `engineId → definición cargada`) con **TTL idle**: una def se saca tras
+`ttl-minutes` sin uso (`@Scheduled sweepIdle`). Seguro: al re-pedirla, `engineNotFound` → el hub recarga.
 
 ## Deploy
 Railway — push a `git@github.com:maxidigital/v2x-tools-engine.git` (auto-deploy). Root dir del engine.
