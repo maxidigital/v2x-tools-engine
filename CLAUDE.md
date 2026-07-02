@@ -1,7 +1,7 @@
 # `v2x-tools-engine` — el dueño de los codecs
 
-> Doc por-servicio (se auto-carga al entrar). Detalle de endpoints/run también en `README.md`. Lo transversal
-> vive en **`v2x-tools-docs/`** (`SYSTEM.md`, `ADDRESSING.md`).
+> Doc por-servicio (se auto-carga al entrar). Build/run en `README.md`. Lo transversal vive en
+> **`v2x-tools-docs/`** (`SYSTEM.md`, `ADDRESSING.md`).
 
 **Propósito**: el **motor de codecs wind**. Carga una definición digerida y hace **convert / generate** sobre
 ella. **Content-addressed**: `POST /engine/load {tree, metadata}` → `engineId = hash(tree+metadata)`; después
