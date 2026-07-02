@@ -33,8 +33,42 @@ status; ante `engineNotFound` recarga y reintenta).
 | `engine.cache.ttl-minutes` | TTL **idle** de cada def cargada (default `60`). Se resetea en cada convert/generate. |
 | `engine.cache.sweep-ms` | Cada cuánto corre el sweeper que evicta las idle (default `600000` = 10 min). |
 
-Sin DB. Estado en memoria (cache `engineId → definición cargada`) con **TTL idle**: una def se saca tras
-`ttl-minutes` sin uso (`@Scheduled sweepIdle`). Seguro: al re-pedirla, `engineNotFound` → el hub recarga.
+Sin DB. Estado en memoria (cache `engineId → definición cargada`) con **TTL idle** — ver
+[§Cache de definiciones](#cache-de-definiciones--ciclo-de-vida-content-addressed--ttl-idle).
+
+## Cache de definiciones — ciclo de vida (content-addressed + TTL idle)
+
+El engine mantiene **un cache en memoria** de definiciones compiladas: `Map<engineId, CachedDef>`
+(`EngineService.cache`, un `ConcurrentHashMap`). No hay DB ni disco — al reiniciar arranca vacío.
+
+**Content-addressed.** `POST /engine/load {tree, metadata}` calcula `engineId = sha256(tree + "\n" + metadata)`
+(primeros 32 hex) y compila la def bajo esa key con `computeIfAbsent`. Es **idempotente**: el mismo árbol+metadata
+→ el mismo engineId → no recompila. Compilar (`compile`) también **valida los fixups fail-fast** contra una
+instancia de muestra, así un path inválido explota en el `load`, no en el `generate`.
+
+**TTL idle (evict tras N minutos sin uso).** Cada `CachedDef` lleva un `volatile long lastAccessMs`:
+- **Se resetea en cada `convert` y `generate`** — ambos pasan por el helper `access(engineId)`, que hace el
+  `cache.get` y pisa `lastAccessMs = System.currentTimeMillis()`. Una def recién compilada ya nace "tocada"
+  (init del constructor), así no la barren antes de usarla.
+- **NO** resetean el TTL: `GET /engine/loaded` (solo lista) ni `DELETE /engine/loaded/{engineId}` (evicta ya).
+- Un **`@Scheduled sweepIdle()`** corre cada `engine.cache.sweep-ms` (default `600000` = 10 min) y hace
+  `cache.entrySet().removeIf(now - lastAccessMs > ttl)`, con `ttl = engine.cache.ttl-minutes` (default `60`).
+  Habilitado por `@EnableScheduling` en `EngineApplication`.
+
+**Por qué es seguro evictar (no se pierde nada).** Si el sweeper saca un engineId y luego llega un
+`convert`/`generate` para él → `cache.get` da null → el engine responde `EngineResult.engineNotFound(engineId)`
+(HTTP 200, status tipado, **no** un error). El **hub** (`ResolutionService`) detecta `isEngineNotFound()` →
+`reload()` → re-trae el árbol del repo → `engine.load` → **mismo engineId** (el hash es determinístico) →
+**reintenta**. Transparente para el llamador. O sea: el TTL solo **libera memoria**; la corrección la garantiza
+el handshake `engineNotFound` que ya existía. El costo de un miss = 1 fetch al repo + 1 recompilación.
+
+**Tuning.**
+- `engine.cache.ttl-minutes` — subir si hay defs grandes muy reusadas y sobra RAM; bajar para liberar antes.
+- `engine.cache.sweep-ms` — cada cuánto barre. Con TTL 60 y sweep 10, una def idle se evicta entre los 60 y 70 min.
+
+> **El otro cache vive en el hub.** El hub tiene su propio `refToEngineId` (`userId|ref → engineId`), que **sigue
+> unbounded** (deuda separada, no la toca esto). No hay problema si el engine evicta: su entrada apunta a un
+> engineId reproducible y, si el engine ya no lo tiene, el `reload()` lo regenera. Ver `v2x-tools-hub/CLAUDE.md`.
 
 ## Deploy
 Railway — push a `git@github.com:maxidigital/v2x-tools-engine.git` (auto-deploy). Root dir del engine.
