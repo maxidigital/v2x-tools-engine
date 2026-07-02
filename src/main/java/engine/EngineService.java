@@ -196,8 +196,8 @@ public class EngineService {
         switch (format.toUpperCase().trim()) {
             case "UPER": return Encoding.UPER;
             case "WER":  return Encoding.WER;
-            case "XML":  return Encoding.XML;
-            case "JSON": return Encoding.JSON;
+            case "XER":  return Encoding.XML;   // XER (X.693) = el nombre público; XML es el enum interno de wind
+            case "JER":  return Encoding.JSON;  // JER (X.697) = el nombre público; JSON es el enum interno de wind
             default:     return null;
         }
     }

@@ -12,7 +12,7 @@ Spring Boot · Java 17 · jars wind en `libs/` (system scope).
 | Método + path | Qué |
 |---|---|
 | `POST /engine/load` `{tree, metadata}` | → `{engineId}` (idempotente por hash). |
-| `POST /engine/convert?from=&to=` (`X-Engine-Id`) | Convierte el payload entre formatos (UPER/WER/XML/JSON). |
+| `POST /engine/convert?from=&to=` (`X-Engine-Id`) | Convierte el payload entre formatos (UPER/WER/**XER**/**JER**). |
 | `POST /engine/generate` (`X-Engine-Id`) | Genera un mensaje de muestra (`{format, size, minimal, overrides}`). |
 | `GET /engine/loaded` · `DELETE /engine/loaded/{engineId}` | Lista / evicta defs cargadas. |
 
