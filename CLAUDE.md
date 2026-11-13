@@ -14,6 +14,7 @@ Spring Boot · Java 17 · jars wind en `libs/` (system scope).
 | `POST /engine/load` `{tree, metadata}` | → `{engineId}` (idempotente por hash). |
 | `POST /engine/convert?from=&to=` (`X-Engine-Id`) | Convierte el payload entre formatos (UPER/WER/**XER**/**JER**). |
 | `POST /engine/generate` (`X-Engine-Id`) | Genera un mensaje de muestra (`{format, size, minimal, overrides}`). |
+| `POST /engine/diagnose?from=UPER` (`X-Engine-Id`) | Desglose **bit a bit** de un UPER (`PERDecoder.trace`): `data` = JSON `{payloadBits, decodedBits, trailingBits, error?, failurePath?, failureBit?, entries[{start,end,path,kind,bits,value,type}], decoded?}`. Un payload roto igual es `ok` (desglose parcial + error). Solo UPER. |
 | `GET /engine/loaded` · `DELETE /engine/loaded/{engineId}` | Lista / evicta defs cargadas. |
 
 `EngineResult` tipado `{status: ok | engineNotFound | decodeError}`, **siempre HTTP 200**. El cache tiene **TTL
@@ -38,4 +39,9 @@ Push a `git@github.com:maxidigital/v2x-tools-engine.git` → Railway auto-deploy
 - ⚠️ **`server.address=::`** obligatorio (Railway interno es IPv6-only; si no → `engine request failed: null`).
 - **`jackson-dataformat-yaml`** obligatoria en runtime (el `WindMessageCodec` usa `YAMLFactory`; `-DskipTests` no lo detecta).
 - **Jars wind en `libs/`**: si cambian, rebuild `wind.connector` + re-copiar + commit (no registry). Ver `README.md`.
+- ⚠️ **`wind.connector.jar` trae su propia copia de `wind.lib`** (jar-with-dependencies) y va primero en el
+  classpath → el engine corre **esa**, no `libs/wind.lib-*.jar`. Un cambio en wind.lib hay que meterlo **también
+  en el connector**. 2026-11-13 (desglose, wind.lib 4.3): se reemplazaron **solo** 4 clases + se agregaron 4 en el
+  connector (`jar uf`), sin rebuild; las otras 444 entradas quedaron byte-idénticas. Fuente: rama
+  `feat/uper-bit-trace` de `maxidigital/v2x-framework`.
 - ⚠️ **Contrato engine↔hub** (envelope tipado, `engineNotFound`): deployar **ambos juntos**.

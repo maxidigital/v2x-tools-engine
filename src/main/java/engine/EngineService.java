@@ -135,6 +135,65 @@ public class EngineService {
         }
     }
 
+    // ---------------- diagnose ----------------
+
+    /**
+     * Bit-level breakdown of a UPER payload: every read of the decoder with its absolute bit range, field path,
+     * kind and value. A malformed payload is still {@code ok}: the partial breakdown plus the error (and where it
+     * happened) is exactly what diagnosing needs. {@code data} = JSON
+     * {@code {payloadBits, decodedBits, trailingBits, error?, failurePath?, failureBit?, entries[], decoded?}}.
+     */
+    public EngineResult diagnose(String engineId, byte[] payload, boolean binaryIn, String from) {
+        CachedDef cd = access(engineId);
+        if (cd == null)
+            return EngineResult.engineNotFound(engineId);
+        if (from != null && !from.isBlank() && !"UPER".equalsIgnoreCase(from.trim()))
+            return EngineResult.decodeError("diagnose supports UPER only (got " + from + ")");
+        try {
+            byte[] bytes = binaryIn
+                    ? payload
+                    : Payload.create(new String(payload, StandardCharsets.UTF_8).trim(), Encoding.UPER).getBytes();
+            if (bytes == null || bytes.length == 0)
+                return EngineResult.decodeError("empty payload");
+            i.Sequence seq = cd.factory.get();
+            a.codecs.uper.PerTrace t = a.codecs.uper.PERDecoder.trace(seq, bytes);
+            return EngineResult.ok(mapper.writeValueAsString(traceJson(t, seq)));
+        } catch (RuntimeException | com.fasterxml.jackson.core.JsonProcessingException e) {
+            return EngineResult.decodeError(String.valueOf(e.getMessage()));
+        }
+    }
+
+    private Map<String, Object> traceJson(a.codecs.uper.PerTrace t, i.Sequence decoded) {
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("payloadBits", t.payloadBits());
+        out.put("decodedBits", t.decodedBits());
+        out.put("trailingBits", t.payloadBits() - t.decodedBits());
+        if (t.error() != null) {
+            out.put("error", t.error());
+            out.put("failurePath", t.failurePath());
+            out.put("failureBit", t.failureBit());
+        }
+        List<Map<String, Object>> entries = new ArrayList<>();
+        for (a.codecs.uper.PerTrace.Entry e : t.entries()) {
+            Map<String, Object> m = new java.util.LinkedHashMap<>();
+            m.put("start", e.startBit);
+            m.put("end", e.endBit);
+            m.put("path", e.path);
+            m.put("kind", e.kind.name());
+            m.put("bits", t.bits(e.startBit, e.endBit));
+            if (e.value != null) m.put("value", e.value);
+            if (e.type != null) m.put("type", e.type);
+            entries.add(m);
+        }
+        out.put("entries", entries);
+        if (t.error() == null) {
+            try {
+                out.put("decoded", mapper.readTree(mapp.get().encode(decoded, Encoding.JSON).toText()));
+            } catch (Exception ignored) { /* breakdown is what matters; JER is a convenience */ }
+        }
+        return out;
+    }
+
     // ---------------- generate ----------------
 
     /** Generates a sample; applies sticky fixups, then one-shot overrides (overrides win on conflict). */

@@ -59,6 +59,20 @@ public class EngineController {
         return respond(r, to, wantsBinary(accept));
     }
 
+    /**
+     * Bit-level breakdown of a UPER payload (hex text, or binary via octet-stream). Typed result; {@code data} is
+     * the breakdown JSON. A malformed payload still answers {@code ok} with the partial breakdown + its error.
+     */
+    @PostMapping("/diagnose")
+    public ResponseEntity<?> diagnose(
+            @RequestHeader("X-Engine-Id") String engineId,
+            @RequestParam(defaultValue = "UPER") String from,
+            @RequestHeader(value = "Content-Type", required = false) String contentType,
+            @RequestBody byte[] payload) {
+        boolean binaryIn = contentType != null && contentType.toLowerCase().contains("octet-stream");
+        return ResponseEntity.ok(engine.diagnose(engineId, payload, binaryIn, from));
+    }
+
     /** Generate a sample. Body = GenerateOptions (format/minimal/size/overrides). Typed result. */
     @PostMapping("/generate")
     public ResponseEntity<?> generate(
