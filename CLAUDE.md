@@ -14,7 +14,7 @@ Spring Boot · Java 17 · jars wind en `libs/` (system scope).
 | `POST /engine/load` `{tree, metadata}` | → `{engineId}` (idempotente por hash). |
 | `POST /engine/convert?from=&to=` (`X-Engine-Id`) | Convierte el payload entre formatos (UPER/WER/**XER**/**JER**). |
 | `POST /engine/generate` (`X-Engine-Id`) | Genera un mensaje de muestra (`{format, size, minimal, overrides}`). |
-| `POST /engine/diagnose?from=UPER` (`X-Engine-Id`) | Desglose **bit a bit** de un UPER (`PERDecoder.trace`): `data` = JSON `{payloadBits, decodedBits, trailingBits, error?, failurePath?, failureBit?, entries[{start,end,path,kind,bits,value,type}], decoded?}`. Un payload roto igual es `ok` (desglose parcial + error). Solo UPER. |
+| `POST /engine/diagnose?from=UPER` (`X-Engine-Id`) | Desglose **bit a bit** de un UPER (`PERDecoder.trace`): `data` = JSON `{payloadBits, decodedBits, trailingBits, error?, failurePath?, failureBit?, failureFieldStart?, padding?, paddingNonZero?, constraintViolations, entries[{start,end,path,kind,bits,value,type,violation?}], decoded?}`. `violation` = `OUT_OF_RANGE` (valor/cantidad fuera del `(min..max)` declarado: UPER lo deja pasar). Un payload roto igual es `ok` (desglose parcial + error). Solo UPER. |
 | `GET /engine/loaded` · `DELETE /engine/loaded/{engineId}` | Lista / evicta defs cargadas. |
 
 `EngineResult` tipado `{status: ok | engineNotFound | decodeError}`, **siempre HTTP 200**. El cache tiene **TTL

@@ -172,7 +172,15 @@ public class EngineService {
             out.put("error", t.error());
             out.put("failurePath", t.failurePath());
             out.put("failureBit", t.failureBit());
+            out.put("failureFieldStart", t.failureFieldStart());
+        } else {
+            // UPER pads the last octet with zeros: non-zero padding is a sign of a broken encoder.
+            String pad = t.bits(t.decodedBits(), t.payloadBits());
+            out.put("padding", pad);
+            if (pad.indexOf('1') >= 0) out.put("paddingNonZero", true);
         }
+        int violations = 0;
+        java.util.Set<String> extended = new java.util.HashSet<>();   // paths whose extension bit was 1
         List<Map<String, Object>> entries = new ArrayList<>();
         for (a.codecs.uper.PerTrace.Entry e : t.entries()) {
             Map<String, Object> m = new java.util.LinkedHashMap<>();
@@ -183,8 +191,15 @@ public class EngineService {
             m.put("bits", t.bits(e.startBit, e.endBit));
             if (e.value != null) m.put("value", e.value);
             if (e.type != null) m.put("type", e.type);
+            if (e.kind == a.codecs.uper.PerTrace.Kind.EXT_BIT && "true".equals(e.value)) extended.add(e.path);
+            String v = extended.contains(e.path) ? null : rangeViolation(e);
+            if (v != null) {
+                m.put("violation", v);
+                violations++;
+            }
             entries.add(m);
         }
+        out.put("constraintViolations", violations);
         out.put("entries", entries);
         if (t.error() == null) {
             try {
@@ -192,6 +207,28 @@ public class EngineService {
             } catch (Exception ignored) { /* breakdown is what matters; JER is a convenience */ }
         }
         return out;
+    }
+
+    private static final java.util.regex.Pattern RANGE =
+            java.util.regex.Pattern.compile("\\((-?\\d+)\\.\\.(-?\\d+)(,\\.\\.\\.)?\\)");
+
+    /**
+     * A constrained value/count outside its declared range. UPER packs {@code (min..max)} into the bits needed
+     * for the span, so e.g. 6 bits for {@code (1..62)} can still carry 63 or 64: the decoder accepts it, but no
+     * valid encoder produces it. Values read through the extension (unconstrained) path carry no range here.
+     */
+    static String rangeViolation(a.codecs.uper.PerTrace.Entry e) {
+        if (e.type == null || e.value == null) return null;
+        if (e.kind != a.codecs.uper.PerTrace.Kind.VALUE && e.kind != a.codecs.uper.PerTrace.Kind.LENGTH) return null;
+        java.util.regex.Matcher m = RANGE.matcher(e.type);
+        if (!m.find()) return null;
+        try {
+            long min = Long.parseLong(m.group(1)), max = Long.parseLong(m.group(2));
+            long val = Long.parseLong(e.value.trim().split("\\s+")[0]);
+            if (val < min || val > max)
+                return "OUT_OF_RANGE: " + val + " not in (" + min + ".." + max + ")";
+        } catch (NumberFormatException ignored) { /* non-numeric value: nothing to check */ }
+        return null;
     }
 
     // ---------------- generate ----------------
