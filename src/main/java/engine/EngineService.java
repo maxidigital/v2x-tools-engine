@@ -174,12 +174,21 @@ public class EngineService {
             out.put("failureBit", t.failureBit());
             out.put("failureFieldStart", t.failureFieldStart());
         } else {
-            // UPER pads the last octet with zeros: non-zero padding is a sign of a broken encoder.
-            String pad = t.bits(t.decodedBits(), t.payloadBits());
+            // Padding = up to the next octet boundary (UPER fills it with 0s; non-zero = broken encoder).
+            // Anything after that boundary is extra data the message does not account for.
+            int padEnd = Math.min(t.payloadBits(), (t.decodedBits() + 7) / 8 * 8);
+            String pad = t.bits(t.decodedBits(), padEnd);
+            out.put("paddingBits", pad.length());
             out.put("padding", pad);
             if (pad.indexOf('1') >= 0) out.put("paddingNonZero", true);
+            int extra = t.payloadBits() - padEnd;
+            if (extra > 0) {
+                out.put("extraBytes", extra / 8);
+                out.put("extraHex", hexOf(t.bits(padEnd, t.payloadBits())));
+            }
         }
         int violations = 0;
+        boolean invalidIndex = false;
         java.util.Set<String> extended = new java.util.HashSet<>();   // paths whose extension bit was 1
         List<Map<String, Object>> entries = new ArrayList<>();
         for (a.codecs.uper.PerTrace.Entry e : t.entries()) {
@@ -192,7 +201,8 @@ public class EngineService {
             if (e.value != null) m.put("value", e.value);
             if (e.type != null) m.put("type", e.type);
             if (e.kind == a.codecs.uper.PerTrace.Kind.EXT_BIT && "true".equals(e.value)) extended.add(e.path);
-            String v = extended.contains(e.path) ? null : rangeViolation(e);
+            String v = e.violation != null ? e.violation : extended.contains(e.path) ? null : rangeViolation(e);
+            if (e.violation != null && e.violation.startsWith("INVALID_INDEX")) invalidIndex = true;
             if (v != null) {
                 m.put("violation", v);
                 violations++;
@@ -201,12 +211,19 @@ public class EngineService {
         }
         out.put("constraintViolations", violations);
         out.put("entries", entries);
-        if (t.error() == null) {
+        if (t.error() == null && !invalidIndex) {   // with an invalid index the JER would show a default, not what was sent
             try {
                 out.put("decoded", mapper.readTree(mapp.get().encode(decoded, Encoding.JSON).toText()));
             } catch (Exception ignored) { /* breakdown is what matters; JER is a convenience */ }
         }
         return out;
+    }
+
+    private static String hexOf(String bits) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i + 8 <= bits.length(); i += 8)
+            sb.append(String.format("%02x", Integer.parseInt(bits.substring(i, i + 8), 2)));
+        return sb.toString();
     }
 
     private static final java.util.regex.Pattern RANGE =
