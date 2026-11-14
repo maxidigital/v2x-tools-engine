@@ -127,12 +127,43 @@ public class EngineService {
                     ? Payload.create(payload, fromEnc)
                     : Payload.create(new String(payload, StandardCharsets.UTF_8), fromEnc);
             i.Sequence seq = cd.factory.get();
-            seq = mapp.get().decode(seq, in);
+            try {
+                seq = mapp.get().decode(seq, in);
+            } catch (WindException | RuntimeException e) {
+                return EngineResult.decodeError(decodeFailure(cd, in, fromEnc, e));
+            }
             Payload out = mapp.get().encode(seq, toEnc);
             return EngineResult.ok(format(out, toEnc));
         } catch (WindException | RuntimeException e) {
-            return EngineResult.decodeError(String.valueOf(e.getMessage()));
+            return EngineResult.decodeError(clean(e));
         }
+    }
+
+    /**
+     * A failed decode, explained. For UPER the bit-level tracer re-reads the payload and says which field broke and
+     * why ("invalid value while decoding X (field starts at bit S): ..."), instead of a bare Java exception.
+     */
+    private String decodeFailure(CachedDef cd, Payload in, Encoding fromEnc, Exception e) {
+        if (fromEnc == Encoding.UPER) {
+            try {
+                byte[] bytes = in.getBytes();
+                if (bytes != null && bytes.length > 0) {
+                    String why = a.codecs.uper.PERDecoder.trace(cd.factory.get(), bytes).error();
+                    if (why != null && !why.isBlank()) return why;
+                }
+            } catch (RuntimeException ignored) { /* fall back to the codec's own message */ }
+        }
+        String m = clean(e);
+        boolean jdk = e.getClass().getName().startsWith("java.") || String.valueOf(e.getMessage()).startsWith("java.");
+        return jdk ? "invalid " + fromEnc + " payload: it does not match the message definition (" + m + ")" : m;
+    }
+
+    /** The exception's message without a leading Java class name ("java.lang.Foo: msg" → "msg"). */
+    static String clean(Throwable e) {
+        String m = e.getMessage();
+        if (m == null || m.isBlank()) return "invalid payload (" + e.getClass().getSimpleName() + ")";
+        String c = m.replaceFirst("^(?:[a-z_$][\\w$]*\\.)+[A-Z][\\w$]*(?:Exception|Error)(?::\\s*|$)", "").trim();
+        return c.isEmpty() ? "invalid payload" : c;
     }
 
     // ---------------- diagnose ----------------
@@ -159,7 +190,7 @@ public class EngineService {
             a.codecs.uper.PerTrace t = a.codecs.uper.PERDecoder.trace(seq, bytes);
             return EngineResult.ok(mapper.writeValueAsString(traceJson(t, seq)));
         } catch (RuntimeException | com.fasterxml.jackson.core.JsonProcessingException e) {
-            return EngineResult.decodeError(String.valueOf(e.getMessage()));
+            return EngineResult.decodeError(clean(e));
         }
     }
 
@@ -267,7 +298,7 @@ public class EngineService {
             Payload payload = mapp.get().encode(seq, enc);
             return EngineResult.ok(format(payload, enc));
         } catch (WindException | RuntimeException e) {
-            return EngineResult.decodeError(String.valueOf(e.getMessage()));
+            return EngineResult.decodeError(clean(e));
         }
     }
 
