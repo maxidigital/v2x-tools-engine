@@ -12,7 +12,7 @@ Spring Boot · Java 17 · jars wind en `libs/` (system scope).
 | Método + path | Qué |
 |---|---|
 | `POST /engine/load` `{tree, metadata}` | → `{engineId}` (idempotente por hash). |
-| `POST /engine/convert?from=&to=` (`X-Engine-Id`) | Convierte el payload entre formatos (UPER/WER/**XER**/**JER**). |
+| `POST /engine/convert?from=&to=` (`X-Engine-Id`) | Convierte el payload entre formatos (UPER/WER/**XER**/**JER**). Si falla un decode UPER, el error lo explica el tracer (campo + bit); ningún error lleva nombres de clases Java. |
 | `POST /engine/generate` (`X-Engine-Id`) | Genera un mensaje de muestra (`{format, size, minimal, overrides}`). |
 | `POST /engine/diagnose?from=UPER` (`X-Engine-Id`) | Desglose **bit a bit** de un UPER (`PERDecoder.trace`): `data` = JSON `{payloadBits, decodedBits, trailingBits, error?, failurePath?, failureBit?, failureFieldStart?, paddingBits?, padding?, paddingNonZero?, extraBytes?, extraHex?, constraintViolations, entries[{start,end,path,kind,bits,value,type,violation?}], decoded?}`. `violation` = `OUT_OF_RANGE` (valor/cantidad fuera del `(min..max)` declarado: UPER lo deja pasar) o `INVALID_INDEX` (ENUMERATED sin valor definido: en modo desglose se marca y **se sigue**; `decoded` se omite). Padding = hasta el borde del octeto; lo que sigue = `extraBytes`. Un payload roto igual es `ok` (desglose parcial + error). Solo UPER. |
 | `GET /engine/loaded` · `DELETE /engine/loaded/{engineId}` | Lista / evicta defs cargadas. |
