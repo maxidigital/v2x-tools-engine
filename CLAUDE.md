@@ -49,3 +49,8 @@ Push a `git@github.com:maxidigital/v2x-tools-engine.git` → Railway auto-deploy
   del connector verificadas idénticas (javap normalizado). Fuente: rama `fix/ext-additions-absent`.
   `wind_model`/`wind_generic` de `maxidigital/v2x-tools-wind` rama `fix/parser-3gpp` (requieren wind.lib 4.4).
 - ⚠️ **Contrato engine↔hub** (envelope tipado, `engineNotFound`): deployar **ambos juntos**.
+- **`metadata.compat = "asn1c"`** (load): `Asn1cCompat` reescribe el árbol antes de compilar para codificar como
+  asn1c/Vanetza: (1) `WITH COMPONENT` aplicado en serie (tipo o campo con tag `withComponents`) saca la
+  extensibilidad del SIZE; (2) las extension additions se suman a la raíz (`SIZE(1..16,...,17..40)` → `(1..40,...)`).
+  Default = X.691. Verificado 2026-11-18: modo asn1c = Vanetza stock; estándar = Vanetza con las restricciones corregidas.
+
