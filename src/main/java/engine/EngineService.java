@@ -65,6 +65,11 @@ public class EngineService {
     }
 
     private CachedDef compile(String treeJson, LoadMetadata meta) {
+        if (meta.compat != null && !meta.compat.isBlank() && !"standard".equalsIgnoreCase(meta.compat)) {
+            if (!Asn1cCompat.ASN1C.equalsIgnoreCase(meta.compat.trim()))
+                throw new IllegalArgumentException("unknown compat '" + meta.compat + "' (standard | asn1c)");
+            treeJson = Asn1cCompat.apply(treeJson, mapper);
+        }
         MessageDefinition def = codec.parse(treeJson);
         final ParserSequence root = def.rootSequence();
         Supplier<i.Sequence> factory = () -> WindGeneric.build(root);
