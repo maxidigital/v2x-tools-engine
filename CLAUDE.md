@@ -44,4 +44,8 @@ Push a `git@github.com:maxidigital/v2x-tools-engine.git` → Railway auto-deploy
   en el connector**. 2026-11-13 (desglose, wind.lib 4.3): se reemplazaron **solo** 4 clases + se agregaron 4 en el
   connector (`jar uf`), sin rebuild; las otras 444 entradas quedaron byte-idénticas. Fuente: rama
   `feat/uper-bit-trace` de `maxidigital/v2x-framework`.
+  2026-11-18 (**wind.lib 4.4**, X.691: NULL, DEFAULT, strings, extensiones, largos, AVOID): mismo método,
+  **16 clases reemplazadas + 2 nuevas** (`i/Null`, `a/generic/GenericNull`); las otras 265 clases de wind.lib
+  del connector verificadas idénticas (javap normalizado). Fuente: rama `fix/ext-additions-absent`.
+  `wind_model`/`wind_generic` de `maxidigital/v2x-tools-wind` rama `fix/parser-3gpp` (requieren wind.lib 4.4).
 - ⚠️ **Contrato engine↔hub** (envelope tipado, `engineNotFound`): deployar **ambos juntos**.

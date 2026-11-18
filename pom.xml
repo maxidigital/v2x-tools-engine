@@ -44,9 +44,9 @@
         <dependency>
             <groupId>de.dlr.ts.v2x</groupId>
             <artifactId>wind.lib</artifactId>
-            <version>4.3</version>
+            <version>4.4</version>
             <scope>system</scope>
-            <systemPath>${project.basedir}/libs/wind.lib-4.3.jar</systemPath>
+            <systemPath>${project.basedir}/libs/wind.lib-4.4.jar</systemPath>
         </dependency>
         <dependency>
             <groupId>de.dlr.ts.v2x</groupId>
