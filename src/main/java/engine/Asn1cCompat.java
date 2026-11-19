@@ -18,6 +18,8 @@ import java.util.Map;
  * the extensibility of the SIZE/range → no extension bit, root only.</li>
  * <li><b>Extension additions</b> ({@code SIZE(1..16,...,17..40)}, {@code (1..32767,...,8388607)}): asn1c merges
  * them into the root → {@code (1..40,...)}, still extensible.</li>
+ * <li><b>Extensible id of an X.681 id + open type pair</b> (CAM 2.3.1 {@code ExtensionContainerId INTEGER
+ * (1..16,...)}): asn1c writes the id without the extension bit.</li>
  * </ol>
  */
 final class Asn1cCompat {
@@ -68,6 +70,10 @@ final class Asn1cCompat {
     }
 
     private static void adjust(ObjectNode t) {
+        // (3) X.681 id + open type (CAM 2.3.1 WrappedExtensionContainer: ExtensionContainerId INTEGER (1..16,...)):
+        // the table constraint {ExtensionContainers} on the id makes asn1c drop the extension bit of the id
+        if (t.get("tags") instanceof ObjectNode tg && tg.path("ot_id_range").asText("").endsWith(",..."))
+            tg.put("ot_id_range", tg.get("ot_id_range").asText().replace(",...", ""));
         if (!(t.get("range") instanceof ObjectNode r)) return;
         JsonNode tags = t.get("tags");
         boolean serial = tags != null && onElements(tags.path("withComponents").asText(null));
