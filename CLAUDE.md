@@ -39,15 +39,10 @@ Push a `git@github.com:maxidigital/v2x-tools-engine.git` → Railway auto-deploy
 - ⚠️ **`server.address=::`** obligatorio (Railway interno es IPv6-only; si no → `engine request failed: null`).
 - **`jackson-dataformat-yaml`** obligatoria en runtime (el `WindMessageCodec` usa `YAMLFactory`; `-DskipTests` no lo detecta).
 - **Jars wind en `libs/`**: si cambian, rebuild `wind.connector` + re-copiar + commit (no registry). Ver `README.md`.
-- ⚠️ **`wind.connector.jar` trae su propia copia de `wind.lib`** (jar-with-dependencies) y va primero en el
-  classpath → el engine corre **esa**, no `libs/wind.lib-*.jar`. Un cambio en wind.lib hay que meterlo **también
-  en el connector**. 2026-11-13 (desglose, wind.lib 4.3): se reemplazaron **solo** 4 clases + se agregaron 4 en el
-  connector (`jar uf`), sin rebuild; las otras 444 entradas quedaron byte-idénticas. Fuente: rama
-  `feat/uper-bit-trace` de `maxidigital/v2x-framework`.
-  2026-11-18 (**wind.lib 4.4**, X.691: NULL, DEFAULT, strings, extensiones, largos, AVOID): mismo método,
-  **16 clases reemplazadas + 2 nuevas** (`i/Null`, `a/generic/GenericNull`); las otras 265 clases de wind.lib
-  del connector verificadas idénticas (javap normalizado). Fuente: rama `fix/ext-additions-absent`.
-  `wind_model`/`wind_generic` de `maxidigital/v2x-tools-wind` rama `fix/parser-3gpp` (requieren wind.lib 4.4).
+- **`wind.connector.jar` ya NO trae `wind.lib`** (2026-11-19): se le quitaron las 285 clases de `wind.lib` (estaban
+  idénticas a `libs/wind.lib-4.4.jar`). Un cambio en `wind.lib` = **reemplazar solo `libs/wind.lib-*.jar`**, sin
+  parchear el connector. El connector conserva lo suyo: `wind/connector`, `commons/translators` (`MessagesApp`),
+  `portshub`, serializadores y `org.json`. Respaldo del jar viejo: fuera del repo.
 - ⚠️ **Contrato engine↔hub** (envelope tipado, `engineNotFound`): deployar **ambos juntos**.
 - **`metadata.compat = "asn1c"`** (load): `Asn1cCompat` reescribe el árbol antes de compilar para codificar como
   asn1c/Vanetza: (1) `WITH COMPONENT` aplicado en serie (tipo o campo con tag `withComponents`) saca la
