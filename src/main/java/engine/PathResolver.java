@@ -2,6 +2,7 @@ package engine;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 
 /**
  * Resolves a path-language expression against a built message instance and sets a leaf value.
@@ -34,12 +35,17 @@ final class PathResolver {
 
     /** Navigate the path and throw if it cannot be resolved (no value set). */
     static void validate(i.Element root, String path) {
-        navigate(root, parse(path));
+        navigate(root, parse(path), e -> { });
     }
 
     /** Navigate the path (with its side effects) and set the leaf to {@code value}. */
-    static void apply(i.Element root, String path, Object value) {
-        i.Element leaf = navigate(root, parse(path));
+    /**
+     * {@code init} receives every element the path brings into existence (an OPTIONAL made present, new SEQUENCE OF
+     * items, a newly chosen CHOICE alternative), so it is not left empty: e.g. a new lane must get its mandatory
+     * node list at its minimum size, or the message does not encode.
+     */
+    static void apply(i.Element root, String path, Object value, Consumer<i.Element> init) {
+        i.Element leaf = navigate(root, parse(path), init);
         setLeaf(leaf, value, path);
     }
 
@@ -68,27 +74,37 @@ final class PathResolver {
         return steps;
     }
 
-    private static i.Element navigate(i.Element root, List<Step> steps) {
+    private static i.Element navigate(i.Element root, List<Step> steps, Consumer<i.Element> init) {
         i.Element cur = root;
         for (Step step : steps) {
-            cur = descend(cur, step.name);
+            cur = descend(cur, step.name, init);
             if (step.index >= 0) {
                 if (!(cur instanceof i.SequenceOf))
                     throw new PathException("index [" + step.index + "] on non-SEQUENCE OF at '" + step.name + "'");
-                cur = ((i.SequenceOf<?, ?>) cur).getElement(step.index);
+                i.SequenceOf<?, ?> list = (i.SequenceOf<?, ?>) cur;
+                if (step.index >= list.max())
+                    throw new PathException("index [" + step.index + "] out of range at '" + step.name
+                            + "' (at most " + list.max() + " items)");
+                int before = list.getSize();
+                cur = list.getElement(step.index);            // creates the items up to index
+                for (int k = before; k <= step.index; k++)
+                    init.accept(list.getElement(k));
             }
         }
         return cur;
     }
 
     /** Descend one named level: SEQUENCE field by name, or CHOICE alternative by name (selecting it). */
-    private static i.Element descend(i.Element cur, String name) {
+    private static i.Element descend(i.Element cur, String name, Consumer<i.Element> init) {
         if (cur instanceof i.Choice) {
             i.Choice<?> cho = (i.Choice<?>) cur;
             i.Field[] fields = cho.getFields();
             for (int j = 0; j < fields.length; j++) {
                 if (name.equals(fields[j].getFieldName())) {
+                    if (cho.getChoiceIndex() == j)
+                        return cho.getElement();
                     cho.setChoiceIndex(j);          // select this alternative
+                    init.accept(cho.getElement());
                     return cho.getElement();
                 }
             }
@@ -98,7 +114,12 @@ final class PathResolver {
             i.Sequence<?> seq = (i.Sequence<?>) cur;
             for (int j = 0; j < seq.length(); j++) {
                 if (name.equals(seq.field(j).getFieldName())) {
-                    return seq.field(j).getElement();   // forces present (lazy create) for optional fields
+                    i.Field f = seq.field(j);
+                    boolean present = f.isPresent();
+                    i.Element e = f.getElement();       // forces present (lazy create) for optional fields
+                    if (!present)
+                        init.accept(e);
+                    return e;
                 }
             }
             throw new PathException("field '" + name + "' not found");
@@ -149,16 +170,16 @@ final class PathResolver {
     }
 
     /**
-     * The framework's artificial REAL (an INTEGER scaled by its {@code @unit}): an integer is the encoded value, as
-     * JER shows it (latitude {@code 413875000}); a number with a decimal point is the value in the unit.
+     * The framework's artificial REAL (an INTEGER scaled by its {@code @unit}): set the encoded integer, as JER
+     * shows it (latitude {@code 413875000} = 41.3875°). Decimals are refused: the scale is not applied here.
      */
     private static void setReal(i.Double<?> d, Object value, String path) {
         String v = value.toString().trim();
         try {
-            if (v.contains(".") || v.contains("e") || v.contains("E")) d.setValue(Double.parseDouble(v));
-            else ((i.Value) d).longValue(Long.parseLong(v));
+            ((i.Value) d).longValue(Long.parseLong(v));
         } catch (NumberFormatException ex) {
-            throw new PathException("expected a number for '" + path + "', got '" + v + "'");
+            throw new PathException("expected the encoded integer for '" + path + "' (as JER shows it, e.g. "
+                    + "413875000 for 41.3875°), got '" + v + "'");
         }
     }
 

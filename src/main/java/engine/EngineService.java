@@ -307,11 +307,20 @@ public class EngineService {
         }
     }
 
-    private static void applyAll(i.Sequence seq, List<PathValue> pvs) {
+    private void applyAll(i.Sequence seq, List<PathValue> pvs) {
         if (pvs == null)
             return;
         for (PathValue pv : pvs)
-            PathResolver.apply(seq, pv.path, pv.value);
+            PathResolver.apply(seq, pv.path, pv.value, this::initialize);
+    }
+
+    /** What a path brings into existence gets minimal values (mandatory parts present, lists at their minimum). */
+    private void initialize(i.Element e) {
+        try {
+            mapp.get().initialize(e);
+        } catch (WindException ex) {
+            throw new PathResolver.PathException("cannot initialize '" + e.name() + "': " + clean(ex));
+        }
     }
 
     // ---------------- helpers ----------------
