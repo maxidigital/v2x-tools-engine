@@ -199,7 +199,7 @@ final class PathResolver {
         }
         if (unit == null)
             throw new PathException("'" + path + "' has no unit: give the encoded integer, got '" + v + "'");
-        if (!given.trim().equalsIgnoreCase(unit))
+        if (!sameUnit(given, unit))
             throw new PathException("'" + path + "' is in " + unit + ", got '" + given.trim() + "'" + unitHint(g));
         ((i.Value) d).longValue(Math.round(Double.parseDouble(num) / g.unitStep()));
     }
@@ -210,10 +210,16 @@ final class PathResolver {
         return sb.toString();
     }
 
+    /** Case and trailing punctuation ignored: ASN.1 comments write "degree per second." */
+    private static boolean sameUnit(String a, String b) {
+        java.util.function.Function<String, String> n = x -> x.trim().replaceAll("[.;,:]+$", "").trim();
+        return n.apply(a).equalsIgnoreCase(n.apply(b));
+    }
+
     private static String unitHint(a.generic.GenericDouble g) {
         if (g == null || g.unitName() == null) return "";
-        return "; or the value with its unit, e.g. '" + g.unitName() + "' values as '12.5 " + g.unitName()
-                + "' (one encoded step = " + g.unitStep() + " " + g.unitName() + ")";
+        String u = g.unitName().trim().replaceAll("[.;,:]+$", "");
+        return "; or the value with its unit, e.g. '12.5 " + u + "' (one encoded step = " + g.unitStep() + " " + u + ")";
     }
 
     /**
