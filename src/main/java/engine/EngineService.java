@@ -296,8 +296,15 @@ public class EngineService {
             if (enc == null)
                 enc = Encoding.UPER;
             i.Sequence seq = cd.factory.get();
-            RandomSize size = opts.size != null ? opts.size : RandomSize.SMALL;
-            seq = opts.minimal ? mapp.get().initialize(seq) : mapp.get().randomize(seq, size);
+            String content = opts.content == null ? "MINIMAL" : opts.content.trim().toUpperCase(java.util.Locale.ROOT);
+            switch (content) {
+                case "MINIMAL" -> seq = mapp.get().initialize(seq);
+                case "RANDOM" -> seq = mapp.get().randomize(seq, RandomSize.SMALL);
+                case "FULL" -> new a.codecs.RandomDecoder(RandomSize.SMALL).full(true).get(seq);
+                default -> {
+                    return EngineResult.decodeError("content must be MINIMAL, RANDOM or FULL, got '" + opts.content + "'");
+                }
+            }
             applyAll(seq, cd.fixups);            // sticky
             applyAll(seq, opts.overrides);       // one-shot (override the fixups if same path)
             Payload payload = mapp.get().encode(seq, enc);
