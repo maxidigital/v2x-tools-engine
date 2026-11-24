@@ -300,10 +300,6 @@ public class EngineService {
             seq = opts.minimal ? mapp.get().initialize(seq) : mapp.get().randomize(seq, size);
             applyAll(seq, cd.fixups);            // sticky
             applyAll(seq, opts.overrides);       // one-shot (override the fixups if same path)
-            // JER/XER would print a message that breaks its constraints (e.g. an empty list with SIZE(2..)):
-            // UPER enforces them, so a generated message is always a valid one
-            if (!enc.isUPER() && !enc.isWER())
-                mapp.get().encode(seq, Encoding.UPER);
             Payload payload = mapp.get().encode(seq, enc);
             return EngineResult.ok(format(payload, enc));
         } catch (WindException | RuntimeException e) {
