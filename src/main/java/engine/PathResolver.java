@@ -171,24 +171,49 @@ final class PathResolver {
         }
     }
 
+    private static final java.util.regex.Pattern NUMBER_UNIT =
+            java.util.regex.Pattern.compile("(-?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?)\\s*(\\S.*)?");
+
     /**
-     * The framework's artificial REAL (an INTEGER scaled by its {@code @unit}): set the encoded integer, as JER
-     * shows it (latitude {@code 413875000} = 41.3875°). Decimals are refused: the scale is not applied here.
+     * The framework's scaled number (an INTEGER with an {@code @unit}, e.g. Latitude: 1E-7 degree). A plain integer
+     * is the encoded value, as JER shows it ({@code 413875000}); a number followed by its unit is the physical value
+     * ({@code 41.3875 degree}), converted with the unit's step. JER and UPER always carry the encoded integer.
      */
     private static void setReal(i.Double<?> d, Object value, String path) {
         String v = value.toString().trim();
-        try {
-            ((i.Value) d).longValue(Long.parseLong(v));
-        } catch (NumberFormatException ex) {
-            throw new PathException("expected the encoded integer for '" + path + "' (as JER shows it, e.g. "
-                    + "413875000 for 41.3875°), got '" + v + "'");
+        a.generic.GenericDouble g = d instanceof a.generic.GenericDouble ? (a.generic.GenericDouble) d : null;
+        String unit = g == null ? null : g.unitName();
+        java.util.regex.Matcher m = NUMBER_UNIT.matcher(v);
+        if (!m.matches())
+            throw new PathException("expected a number for '" + path + "', got '" + v + "'" + unitHint(g));
+        String num = m.group(1);
+        String given = m.group(2);
+        if (given == null) {
+            try {
+                ((i.Value) d).longValue(Long.parseLong(num));
+            } catch (NumberFormatException ex) {
+                throw new PathException("'" + v + "' for '" + path + "': a plain number is the encoded integer"
+                        + unitHint(g));
+            }
+            return;
         }
+        if (unit == null)
+            throw new PathException("'" + path + "' has no unit: give the encoded integer, got '" + v + "'");
+        if (!given.trim().equalsIgnoreCase(unit))
+            throw new PathException("'" + path + "' is in " + unit + ", got '" + given.trim() + "'" + unitHint(g));
+        ((i.Value) d).longValue(Math.round(Double.parseDouble(num) / g.unitStep()));
     }
 
     private static String names(i.Field[] fields) {
         StringBuilder sb = new StringBuilder();
         for (i.Field f : fields) sb.append(sb.length() == 0 ? "" : ", ").append(f.getFieldName());
         return sb.toString();
+    }
+
+    private static String unitHint(a.generic.GenericDouble g) {
+        if (g == null || g.unitName() == null) return "";
+        return "; or the value with its unit, e.g. '" + g.unitName() + "' values as '12.5 " + g.unitName()
+                + "' (one encoded step = " + g.unitStep() + " " + g.unitName() + ")";
     }
 
     /**
