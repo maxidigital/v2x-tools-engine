@@ -7,14 +7,14 @@ import java.util.function.Consumer;
 /**
  * Resolves a path-language expression against a built message instance and sets a leaf value.
  *
- * Path = steps separated by ':' (or '.', the APL spelling: ASN.1 identifiers never contain either). Each step names a SEQUENCE field or a CHOICE alternative, with an
+ * Path = steps separated by '.' (APL; ASN.1 identifiers never contain a dot). Each step names a SEQUENCE field or a CHOICE alternative, with an
  * optional [n] to index into a SEQUENCE OF. Descending has side effects (this is why it's a "language",
  * not a plain navigator): a CHOICE step selects that alternative ({@code setChoiceIndex}); an OPTIONAL
  * field is forced present (its element is lazily created on access).
  *
- *   header:messageId
- *   container:sensorInformationContainer:sensorId
- *   cpmContainers:perceivedObjectContainer:perceivedObjects[0]:objectId
+ *   header.messageId
+ *   container.sensorInformationContainer.sensorId
+ *   cpmContainers.perceivedObjectContainer.perceivedObjects[0].objectId
  *
  * Used for both load fixups (validated against a sample at load) and generate overrides (applied per call).
  */
@@ -53,7 +53,7 @@ final class PathResolver {
         if (path == null || path.isBlank())
             throw new PathException("empty path");
         List<Step> steps = new ArrayList<>();
-        for (String raw : path.split("[:.]")) {
+        for (String raw : path.split("\\.")) {
             String seg = raw.trim();
             if (seg.isEmpty())
                 throw new PathException("empty step in path '" + path + "'");
