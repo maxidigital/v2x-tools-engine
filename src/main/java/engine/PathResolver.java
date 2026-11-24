@@ -108,7 +108,7 @@ final class PathResolver {
                     return cho.getElement();
                 }
             }
-            throw new PathException("CHOICE alternative '" + name + "' not found");
+            throw new PathException("CHOICE alternative '" + name + "' not found; alternatives: " + names(fields));
         }
         if (cur instanceof i.Sequence) {
             i.Sequence<?> seq = (i.Sequence<?>) cur;
@@ -122,7 +122,9 @@ final class PathResolver {
                     return e;
                 }
             }
-            throw new PathException("field '" + name + "' not found");
+            i.Field[] fs = new i.Field[seq.length()];
+            for (int j = 0; j < fs.length; j++) fs[j] = seq.field(j);
+            throw new PathException("field '" + name + "' not found; fields here: " + names(fs));
         }
         throw new PathException("cannot descend '" + name + "' on a non-SEQUENCE/CHOICE element");
     }
@@ -183,14 +185,44 @@ final class PathResolver {
         }
     }
 
-    /** '0'/'1' characters, as JER shows them ({@code "10"}), optionally as ASN.1 {@code '10'B}. */
+    private static String names(i.Field[] fields) {
+        StringBuilder sb = new StringBuilder();
+        for (i.Field f : fields) sb.append(sb.length() == 0 ? "" : ", ").append(f.getFieldName());
+        return sb.toString();
+    }
+
+    /**
+     * '0'/'1' characters, as JER shows them ({@code "10"}), optionally as ASN.1 {@code '10'B}; or the named bits to
+     * set, {@code {ingressPath,egressPath}} (the others 0).
+     */
     private static void setBits(i.BitString<?> b, String v, String path) {
         String bits = v.matches("'[01]*'B") ? v.substring(1, v.length() - 2) : v;
+        if (v.startsWith("{") && v.endsWith("}")) bits = namedBits(b, v.substring(1, v.length() - 1), path);
         if (!bits.matches("[01]*"))
             throw new PathException("expected bits (e.g. \"0110\") for '" + path + "', got '" + v + "'");
         checkLength(bits.length(), b.getLength(), b.min(), b.max(), b.indefiniteLength(), "bits", path);
         for (int k = 0; k < bits.length(); k++)
             b.set(k, bits.charAt(k) == '1');
+    }
+
+    private static String namedBits(i.BitString<?> b, String list, String path) {
+        String[] labels = b.labels();
+        if (labels == null || labels.length == 0)
+            throw new PathException("'" + path + "' has no named bits: give them as '0'/'1' characters");
+        java.util.List<Integer> on = new ArrayList<>();
+        for (String raw : list.split(",")) {
+            String n = raw.trim();
+            if (n.isEmpty()) continue;
+            int k = java.util.Arrays.asList(labels).indexOf(n);
+            if (k < 0)
+                throw new PathException("'" + n + "' is not a bit of '" + path + "'; bits: " + String.join(", ", labels));
+            on.add(k);
+        }
+        int len = Math.max(Math.max(b.min(), b.getLength()), on.stream().mapToInt(x -> x + 1).max().orElse(0));
+        char[] c = new char[len];
+        java.util.Arrays.fill(c, '0');
+        for (int k : on) c[k] = '1';
+        return new String(c);
     }
 
     /** Hex, as JER shows it ({@code "0a1b"}), optionally as ASN.1 {@code '0A1B'H}. */
