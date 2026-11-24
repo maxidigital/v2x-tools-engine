@@ -46,6 +46,6 @@ Push a `git@github.com:maxidigital/v2x-tools-engine.git` → Railway auto-deploy
 - ⚠️ **Contrato engine↔hub** (envelope tipado, `engineNotFound`): deployar **ambos juntos**.
 - **`metadata.compat = "asn1c"`** (load): `Asn1cCompat` reescribe el árbol antes de compilar para codificar como
   asn1c/Vanetza: (1) `WITH COMPONENT` aplicado en serie (tipo o campo con tag `withComponents`) saca la
-  extensibilidad del SIZE; (2) las extension additions se suman a la raíz (`SIZE(1..16,...,17..40)` → `(1..40,...)`).
+  extensibilidad del SIZE; (2) las extension additions se suman a la raíz (`SIZE(1..16,...,17..40)` → `(1..40,...)`); (3) el id extensible de un par X.681 id + open type (CAM 2.3.1 `ExtensionContainerId INTEGER (1..16,...)`) se escribe sin bit de extensión.
   Default = X.691. Verificado 2026-11-18: modo asn1c = Vanetza stock; estándar = Vanetza con las restricciones corregidas.
 
