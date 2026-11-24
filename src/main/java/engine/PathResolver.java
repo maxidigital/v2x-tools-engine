@@ -133,7 +133,7 @@ final class PathResolver {
         if (value == null)
             throw new PathException("null value for '" + path + "'");
         if (leaf instanceof i.Integer) {
-            ((i.Integer<?>) leaf).setValue(asLong(value, path));
+            ((i.Integer<?>) leaf).setValue(integerValue((i.Integer<?>) leaf, value, path));
         } else if (leaf instanceof i.Boolean) {
             ((i.Boolean) leaf).setValue(value instanceof java.lang.Boolean ? (java.lang.Boolean) value
                     : java.lang.Boolean.parseBoolean(value.toString()));
@@ -236,8 +236,24 @@ final class PathResolver {
             b.set(k, bits.charAt(k) == '1');
     }
 
+    /** A number, or one of the type's named numbers ({@code stationType=passengerCar}). */
+    private static long integerValue(i.Integer<?> n, Object value, String path) {
+        String v = value.toString().trim();
+        java.util.Map<String, Long> named = n instanceof a.generic.GenericInteger
+                ? ((a.generic.GenericInteger) n).namedValues() : java.util.Map.of();
+        Long byName = named.get(v);
+        if (byName != null) return byName;
+        try {
+            return Long.parseLong(v);
+        } catch (NumberFormatException e) {
+            throw new PathException("expected a number for '" + path + "', got '" + v + "'"
+                    + (named.isEmpty() ? "" : "; or one of " + String.join(", ", named.keySet())));
+        }
+    }
+
     private static String namedBits(i.BitString<?> b, String list, String path) {
-        String[] labels = b.labels();
+        String[] labels = b instanceof a.generic.GenericBitString
+                ? ((a.generic.GenericBitString) b).bitNames() : b.labels();
         if (labels == null || labels.length == 0)
             throw new PathException("'" + path + "' has no named bits: give them as '0'/'1' characters");
         java.util.List<Integer> on = new ArrayList<>();
@@ -246,7 +262,8 @@ final class PathResolver {
             if (n.isEmpty()) continue;
             int k = java.util.Arrays.asList(labels).indexOf(n);
             if (k < 0)
-                throw new PathException("'" + n + "' is not a bit of '" + path + "'; bits: " + String.join(", ", labels));
+                throw new PathException("'" + n + "' is not a bit of '" + path + "'; bits: "
+                        + String.join(", ", java.util.Arrays.stream(labels).filter(java.util.Objects::nonNull).toList()));
             on.add(k);
         }
         int len = Math.max(Math.max(b.min(), b.getLength()), on.stream().mapToInt(x -> x + 1).max().orElse(0));
