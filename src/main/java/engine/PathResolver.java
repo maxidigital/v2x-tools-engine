@@ -6,7 +6,7 @@ import java.util.List;
 /**
  * Resolves a path-language expression against a built message instance and sets a leaf value.
  *
- * Path = steps separated by ':'. Each step names a SEQUENCE field or a CHOICE alternative, with an
+ * Path = steps separated by ':' (or '.', the APL spelling: ASN.1 identifiers never contain either). Each step names a SEQUENCE field or a CHOICE alternative, with an
  * optional [n] to index into a SEQUENCE OF. Descending has side effects (this is why it's a "language",
  * not a plain navigator): a CHOICE step selects that alternative ({@code setChoiceIndex}); an OPTIONAL
  * field is forced present (its element is lazily created on access).
@@ -47,7 +47,7 @@ final class PathResolver {
         if (path == null || path.isBlank())
             throw new PathException("empty path");
         List<Step> steps = new ArrayList<>();
-        for (String raw : path.split(":")) {
+        for (String raw : path.split("[:.]")) {
             String seg = raw.trim();
             if (seg.isEmpty())
                 throw new PathException("empty step in path '" + path + "'");
@@ -115,13 +115,82 @@ final class PathResolver {
             ((i.Boolean) leaf).setValue(value instanceof java.lang.Boolean ? (java.lang.Boolean) value
                     : java.lang.Boolean.parseBoolean(value.toString()));
         } else if (leaf instanceof i.Enumerated) {
-            ((i.Enumerated) leaf).setValue((int) asLong(value, path));
+            setEnumerated((i.Enumerated<?>) leaf, value, path);
         } else if (leaf instanceof i.Text) {
             ((i.Text) leaf).setValue(value.toString());
+        } else if (leaf instanceof i.Double && leaf instanceof i.Value) {
+            setReal((i.Double<?>) leaf, value, path);
+        } else if (leaf instanceof i.BitString) {
+            setBits((i.BitString<?>) leaf, value.toString().trim(), path);
+        } else if (leaf instanceof i.OctetString) {
+            setOctets((i.OctetString<?>) leaf, value.toString().trim(), path);
         } else {
             throw new PathException("unsupported leaf type for '" + path + "': "
                     + leaf.getClass().getSimpleName());
         }
+    }
+
+    /** By identifier (as JER shows it, e.g. {@code passengerCar}) or by number. */
+    private static void setEnumerated(i.Enumerated<?> e, Object value, String path) {
+        String v = value.toString().trim();
+        String[] labels = e.labels();
+        if (labels != null)
+            for (int k = 0; k < labels.length; k++)
+                if (v.equals(labels[k])) {
+                    e.setValue(e.values()[k]);
+                    return;
+                }
+        try {
+            e.setValue(Integer.parseInt(v));
+        } catch (NumberFormatException ex) {
+            throw new PathException("'" + v + "' is not a value of '" + path + "'"
+                    + (labels == null ? "" : "; one of " + String.join(", ", labels)));
+        }
+    }
+
+    /**
+     * The framework's artificial REAL (an INTEGER scaled by its {@code @unit}): an integer is the encoded value, as
+     * JER shows it (latitude {@code 413875000}); a number with a decimal point is the value in the unit.
+     */
+    private static void setReal(i.Double<?> d, Object value, String path) {
+        String v = value.toString().trim();
+        try {
+            if (v.contains(".") || v.contains("e") || v.contains("E")) d.setValue(Double.parseDouble(v));
+            else ((i.Value) d).longValue(Long.parseLong(v));
+        } catch (NumberFormatException ex) {
+            throw new PathException("expected a number for '" + path + "', got '" + v + "'");
+        }
+    }
+
+    /** '0'/'1' characters, as JER shows them ({@code "10"}), optionally as ASN.1 {@code '10'B}. */
+    private static void setBits(i.BitString<?> b, String v, String path) {
+        String bits = v.matches("'[01]*'B") ? v.substring(1, v.length() - 2) : v;
+        if (!bits.matches("[01]*"))
+            throw new PathException("expected bits (e.g. \"0110\") for '" + path + "', got '" + v + "'");
+        checkLength(bits.length(), b.getLength(), b.min(), b.max(), b.indefiniteLength(), "bits", path);
+        for (int k = 0; k < bits.length(); k++)
+            b.set(k, bits.charAt(k) == '1');
+    }
+
+    /** Hex, as JER shows it ({@code "0a1b"}), optionally as ASN.1 {@code '0A1B'H}. */
+    private static void setOctets(i.OctetString<?> o, String v, String path) {
+        String hex = v.matches("'[0-9A-Fa-f]*'H") ? v.substring(1, v.length() - 2) : v;
+        if (!hex.matches("([0-9A-Fa-f]{2})*"))
+            throw new PathException("expected hex bytes (e.g. \"0a1b\") for '" + path + "', got '" + v + "'");
+        int n = hex.length() / 2;
+        checkLength(n, o.getLength(), o.min(), o.max(), o.indefiniteLength(), "bytes", path);
+        for (int k = 0; k < n; k++)
+            o.setValue(k, (byte) Integer.parseInt(hex.substring(2 * k, 2 * k + 2), 16));
+    }
+
+    /** Within SIZE, and not shorter than what is there (the framework can grow a string, not shrink it). */
+    private static void checkLength(int n, int current, int min, int max, boolean unbounded, String unit, String path) {
+        if (n < min || (!unbounded && n > max))
+            throw new PathException("'" + path + "' takes " + (min == max ? min : min + ".." + max) + " " + unit
+                    + ", got " + n);
+        if (n < current)
+            throw new PathException("'" + path + "' already has " + current + " " + unit
+                    + " and cannot be shortened: generate with minimal");
     }
 
     private static long asLong(Object value, String path) {
