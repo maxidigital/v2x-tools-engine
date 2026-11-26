@@ -85,6 +85,12 @@ public class EngineController {
         return respond(r, opts.format, wantsBinary(accept));
     }
 
+    /** The set paths matching a search: body = the query text. Typed result; data = the hits, one per line. */
+    @PostMapping("/paths")
+    public ResponseEntity<?> paths(@RequestHeader("X-Engine-Id") String engineId, @RequestBody(required = false) String query) {
+        return ResponseEntity.ok(engine.paths(engineId, query));
+    }
+
     /** List loaded definitions: [{engineId, description}]. */
     @GetMapping("/loaded")
     public ResponseEntity<?> loaded() {

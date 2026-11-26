@@ -321,6 +321,19 @@ public class EngineService {
             PathResolver.apply(seq, pv.path, pv.value, this::initialize);
     }
 
+    /** The set paths of the message matching {@code query} (fields, CHOICE alternatives, named values). */
+    public EngineResult paths(String engineId, String query) {
+        CachedDef cd = access(engineId);
+        if (cd == null)
+            return EngineResult.engineNotFound(engineId);
+        try {
+            i.Sequence seq = mapp.get().initialize(cd.factory.get());
+            return EngineResult.ok(SchemaPaths.find(seq, query));
+        } catch (WindException | RuntimeException e) {
+            return EngineResult.decodeError(clean(e));
+        }
+    }
+
     /** Applies every override and reports all failing ones at once (so a caller fixes them in one retry). */
     private void applyOverrides(i.Sequence seq, List<PathValue> pvs) {
         if (pvs == null)
