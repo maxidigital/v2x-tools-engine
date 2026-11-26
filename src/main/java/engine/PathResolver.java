@@ -101,7 +101,8 @@ final class PathResolver {
             i.Field[] fields = cho.getFields();
             int j = indexOf(fields, name);
             if (j < 0)
-                throw new PathException("CHOICE alternative '" + name + "' not found; alternatives: " + names(fields));
+                throw new PathException("CHOICE alternative '" + name + "' not found" + didYouMean(name, fieldNames(fields))
+                        + "; alternatives: " + names(fields));
             if (cho.getChoiceIndex() != j) {
                 cho.setChoiceIndex(j);              // select this alternative
                 init.accept(cho.getElement());
@@ -114,7 +115,8 @@ final class PathResolver {
             for (int k = 0; k < fields.length; k++) fields[k] = seq.field(k);
             int j = indexOf(fields, name);
             if (j < 0)
-                throw new PathException("field '" + name + "' not found; fields here: " + names(fields));
+                throw new PathException("field '" + name + "' not found" + didYouMean(name, fieldNames(fields))
+                        + "; fields here: " + names(fields));
             i.Field f = fields[j];
             boolean present = f.isPresent();
             i.Element e = f.getElement();               // forces present (lazy create) for optional fields
@@ -122,7 +124,8 @@ final class PathResolver {
                 init.accept(e);
             return e;
         }
-        throw new PathException("cannot descend '" + name + "' on a non-SEQUENCE/CHOICE element");
+        throw new PathException("'" + name + "' cannot go under a " + kind(cur) + " value (it has no fields): set the "
+                + "element before '" + name + "' directly");
     }
 
     private static void setLeaf(i.Element leaf, Object value, String path) {
@@ -163,7 +166,7 @@ final class PathResolver {
             e.setValue(Integer.parseInt(v));
         } catch (NumberFormatException ex) {
             throw new PathException("'" + v + "' is not a value of '" + path + "'"
-                    + (labels == null ? "" : "; one of " + String.join(", ", labels)));
+                    + (labels == null ? "" : didYouMean(v, labels) + "; one of " + String.join(", ", labels)));
         }
     }
 
@@ -195,9 +198,14 @@ final class PathResolver {
         }
         if (unit == null)
             throw new PathException("'" + path + "' has no unit: give the encoded integer, got '" + v + "'");
-        if (!sameUnit(given, unit))
-            throw new PathException("'" + path + "' is in " + unit + ", got '" + given.trim() + "'" + unitHint(g));
-        ((i.Value) d).longValue(Math.round(Double.parseDouble(num) / g.unitStep()));
+        double x = Double.parseDouble(num);
+        if (!sameUnit(given, unit)) {
+            Double factor = Units.factor(given, unit);
+            if (factor == null)
+                throw new PathException("'" + path + "' is in " + unit + ", got '" + given.trim() + "'" + unitHint(g));
+            x *= factor;
+        }
+        ((i.Value) d).longValue(Math.round(x / g.unitStep()));
     }
 
     /**
@@ -208,13 +216,53 @@ final class PathResolver {
     private static int indexOf(i.Field[] fields, String name) {
         for (int j = 0; j < fields.length; j++)
             if (name.equals(fields[j].getFieldName())) return j;
+        int found = unique(fields, f -> name.equalsIgnoreCase(f));
+        if (found >= 0) return found;
+        // CDD CauseCodeChoice numbers its alternatives (roadworks3, accident2): 'roadworks' finds 'roadworks3'
+        return unique(fields, f -> f.length() > name.length() && f.substring(0, name.length()).equalsIgnoreCase(name)
+                && f.substring(name.length()).matches("\\d+"));
+    }
+
+    private static int unique(i.Field[] fields, java.util.function.Predicate<String> match) {
         int found = -1;
         for (int j = 0; j < fields.length; j++)
-            if (name.equalsIgnoreCase(fields[j].getFieldName())) {
+            if (match.test(fields[j].getFieldName())) {
                 if (found >= 0) return -1;
                 found = j;
             }
         return found;
+    }
+
+    private static String[] fieldNames(i.Field[] fields) {
+        String[] n = new String[fields.length];
+        for (int j = 0; j < n.length; j++) n[j] = fields[j].getFieldName();
+        return n;
+    }
+
+    /** "; did you mean 'x'?" for names that contain each other, ignoring case (causeCode / ccAndScc does not match). */
+    static String didYouMean(String name, java.util.Collection<String> candidates) {
+        return didYouMean(name, candidates.toArray(new String[0]));
+    }
+
+    static String didYouMean(String name, String[] candidates) {
+        String n = name.toLowerCase(java.util.Locale.ROOT);
+        java.util.List<String> hits = new java.util.ArrayList<>();
+        for (String c : candidates) {
+            String l = c.toLowerCase(java.util.Locale.ROOT);
+            if (n.length() >= 3 && l.length() >= 3 && (l.contains(n) || n.contains(l)) && hits.size() < 3) hits.add(c);
+        }
+        return hits.isEmpty() ? "" : "; did you mean " + String.join(" or ", hits.stream().map(h -> "'" + h + "'").toList()) + "?";
+    }
+
+    private static String kind(i.Element e) {
+        if (e instanceof i.Integer) return "INTEGER";
+        if (e instanceof i.Enumerated) return "ENUMERATED";
+        if (e instanceof i.Boolean) return "BOOLEAN";
+        if (e instanceof i.BitString) return "BIT STRING";
+        if (e instanceof i.OctetString) return "OCTET STRING";
+        if (e instanceof i.Text) return "string";
+        if (e instanceof i.Double) return "number";
+        return "leaf";
     }
 
     private static String names(i.Field[] fields) {
@@ -260,7 +308,7 @@ final class PathResolver {
             return Long.parseLong(v);
         } catch (NumberFormatException e) {
             throw new PathException("expected a number for '" + path + "', got '" + v + "'"
-                    + (named.isEmpty() ? "" : "; or one of " + String.join(", ", named.keySet())));
+                    + (named.isEmpty() ? "" : didYouMean(v, named.keySet()) + "; or one of " + String.join(", ", named.keySet())));
         }
     }
 

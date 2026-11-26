@@ -306,7 +306,7 @@ public class EngineService {
                 }
             }
             applyAll(seq, cd.fixups);            // sticky
-            applyAll(seq, opts.overrides);       // one-shot (override the fixups if same path)
+            applyOverrides(seq, opts.overrides); // one-shot (override the fixups if same path)
             Payload payload = mapp.get().encode(seq, enc);
             return EngineResult.ok(format(payload, enc));
         } catch (WindException | RuntimeException e) {
@@ -319,6 +319,27 @@ public class EngineService {
             return;
         for (PathValue pv : pvs)
             PathResolver.apply(seq, pv.path, pv.value, this::initialize);
+    }
+
+    /** Applies every override and reports all failing ones at once (so a caller fixes them in one retry). */
+    private void applyOverrides(i.Sequence seq, List<PathValue> pvs) {
+        if (pvs == null)
+            return;
+        List<String> errors = new java.util.ArrayList<>();
+        for (PathValue pv : pvs) {
+            try {
+                PathResolver.apply(seq, pv.path, pv.value, this::initialize);
+            } catch (PathResolver.PathException e) {
+                errors.add(e.getMessage());
+            }
+        }
+        if (errors.size() == 1)
+            throw new PathResolver.PathException(errors.get(0));
+        if (!errors.isEmpty()) {
+            StringBuilder sb = new StringBuilder(errors.size() + " of " + pvs.size() + " set lines failed (the others are fine):");
+            for (int k = 0; k < errors.size(); k++) sb.append("\n").append(k + 1).append(". ").append(errors.get(k));
+            throw new PathResolver.PathException(sb.toString());
+        }
     }
 
     /** What a path brings into existence gets minimal values (mandatory parts present, lists at their minimum). */
