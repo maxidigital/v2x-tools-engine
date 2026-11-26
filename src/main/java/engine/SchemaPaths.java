@@ -34,6 +34,9 @@ final class SchemaPaths {
             throw new IllegalArgumentException("query is required (a word to look for, e.g. 'pedestrian')");
         SchemaPaths sp = new SchemaPaths(query);
         sp.walk(root, "", 0);
+        // shallow paths first (the message's own fields before the same type nested in containers); stable
+        sp.hits.sort(java.util.Comparator.comparingInt(h -> depth(h.substring(0, h.indexOf("  ")))));
+        if (sp.hits.size() > MAX_HITS) sp.hits.subList(MAX_HITS, sp.hits.size()).clear();
         if (sp.hits.isEmpty())
             return "No field, alternative or value of this message matches '" + query.trim() + "'.";
         StringBuilder sb = new StringBuilder();
@@ -96,7 +99,13 @@ final class SchemaPaths {
         for (String t : terms)
             if (!hay.contains(t) && !compact.contains(t)) return;
         total++;
-        if (hits.size() < MAX_HITS) hits.add(path + "  " + (type == null ? "" : type + " ") + detail);
+        if (hits.size() < 5000) hits.add(path + "  " + (type == null ? "" : type + " ") + detail);
+    }
+
+    private static int depth(String path) {
+        int d = 0;
+        for (int k = 0; k < path.length(); k++) if (path.charAt(k) == '.' || path.charAt(k) == '[') d++;
+        return d;
     }
 
     private static String join(String path, String name) {
