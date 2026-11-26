@@ -46,7 +46,7 @@ final class PathResolver {
      */
     static void apply(i.Element root, String path, Object value, Consumer<i.Element> init) {
         i.Element leaf = navigate(root, parse(path), init);
-        setLeaf(leaf, value, path);
+        setLeaf(leaf, value, path, init);
     }
 
     private static List<Step> parse(String path) {
@@ -124,14 +124,26 @@ final class PathResolver {
                 init.accept(e);
             return e;
         }
-        throw new PathException("'" + name + "' cannot go under a " + kind(cur) + " value (it has no fields): set the "
+        throw new PathException("'" + name + "' cannot go under " + ("AEIOU".indexOf(kind(cur).charAt(0)) >= 0 ? "an " : "a ") + kind(cur) + " value (it has no fields): set the "
                 + "element before '" + name + "' directly");
     }
 
-    private static void setLeaf(i.Element leaf, Object value, String path) {
+    private static void setLeaf(i.Element leaf, Object value, String path, Consumer<i.Element> init) {
         if (value == null)
             throw new PathException("null value for '" + path + "'");
-        if (leaf instanceof i.Integer) {
+        if (leaf instanceof i.Choice) {             // a CHOICE set to an alternative's name selects it (minimal)
+            i.Choice<?> cho = (i.Choice<?>) leaf;
+            i.Field[] fields = cho.getFields();
+            String v = value.toString().trim();
+            int j = indexOf(fields, v);
+            if (j < 0)
+                throw new PathException("'" + path + "' is a CHOICE: give one of its alternatives" + didYouMean(v, fieldNames(fields))
+                        + ": " + names(fields) + " (or set a field inside one: '" + path + "." + fields[0].getFieldName() + "...')");
+            if (cho.getChoiceIndex() != j) {
+                cho.setChoiceIndex(j);
+                init.accept(cho.getElement());
+            }
+        } else if (leaf instanceof i.Integer) {
             ((i.Integer<?>) leaf).setValue(integerValue((i.Integer<?>) leaf, value, path));
         } else if (leaf instanceof i.Boolean) {
             ((i.Boolean) leaf).setValue(value instanceof java.lang.Boolean ? (java.lang.Boolean) value
@@ -147,8 +159,8 @@ final class PathResolver {
         } else if (leaf instanceof i.OctetString) {
             setOctets((i.OctetString<?>) leaf, value.toString().trim(), path);
         } else {
-            throw new PathException("unsupported leaf type for '" + path + "': "
-                    + leaf.getClass().getSimpleName());
+            throw new PathException("'" + path + "' is a " + (leaf instanceof i.Sequence ? "SEQUENCE" : "list")
+                    + ", not a single value: set its fields ('" + path + (leaf instanceof i.Sequence ? ".<field>" : "[0]...") + "=...')");
         }
     }
 
