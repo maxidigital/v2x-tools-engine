@@ -99,32 +99,28 @@ final class PathResolver {
         if (cur instanceof i.Choice) {
             i.Choice<?> cho = (i.Choice<?>) cur;
             i.Field[] fields = cho.getFields();
-            for (int j = 0; j < fields.length; j++) {
-                if (name.equals(fields[j].getFieldName())) {
-                    if (cho.getChoiceIndex() == j)
-                        return cho.getElement();
-                    cho.setChoiceIndex(j);          // select this alternative
-                    init.accept(cho.getElement());
-                    return cho.getElement();
-                }
+            int j = indexOf(fields, name);
+            if (j < 0)
+                throw new PathException("CHOICE alternative '" + name + "' not found; alternatives: " + names(fields));
+            if (cho.getChoiceIndex() != j) {
+                cho.setChoiceIndex(j);              // select this alternative
+                init.accept(cho.getElement());
             }
-            throw new PathException("CHOICE alternative '" + name + "' not found; alternatives: " + names(fields));
+            return cho.getElement();
         }
         if (cur instanceof i.Sequence) {
             i.Sequence<?> seq = (i.Sequence<?>) cur;
-            for (int j = 0; j < seq.length(); j++) {
-                if (name.equals(seq.field(j).getFieldName())) {
-                    i.Field f = seq.field(j);
-                    boolean present = f.isPresent();
-                    i.Element e = f.getElement();       // forces present (lazy create) for optional fields
-                    if (!present)
-                        init.accept(e);
-                    return e;
-                }
-            }
-            i.Field[] fs = new i.Field[seq.length()];
-            for (int j = 0; j < fs.length; j++) fs[j] = seq.field(j);
-            throw new PathException("field '" + name + "' not found; fields here: " + names(fs));
+            i.Field[] fields = new i.Field[seq.length()];
+            for (int k = 0; k < fields.length; k++) fields[k] = seq.field(k);
+            int j = indexOf(fields, name);
+            if (j < 0)
+                throw new PathException("field '" + name + "' not found; fields here: " + names(fields));
+            i.Field f = fields[j];
+            boolean present = f.isPresent();
+            i.Element e = f.getElement();               // forces present (lazy create) for optional fields
+            if (!present)
+                init.accept(e);
+            return e;
         }
         throw new PathException("cannot descend '" + name + "' on a non-SEQUENCE/CHOICE element");
     }
@@ -202,6 +198,23 @@ final class PathResolver {
         if (!sameUnit(given, unit))
             throw new PathException("'" + path + "' is in " + unit + ", got '" + given.trim() + "'" + unitHint(g));
         ((i.Value) d).longValue(Math.round(Double.parseDouble(num) / g.unitStep()));
+    }
+
+    /**
+     * The field (or alternative) called {@code name}: exactly, or else ignoring case when exactly one matches. Versions
+     * of a message spell the same field differently (CAM v2 header {@code stationID}, CAM 2.3.1 {@code stationId}), so
+     * a path written for one works for the other. -1 when there is none (or the case-insensitive match is ambiguous).
+     */
+    private static int indexOf(i.Field[] fields, String name) {
+        for (int j = 0; j < fields.length; j++)
+            if (name.equals(fields[j].getFieldName())) return j;
+        int found = -1;
+        for (int j = 0; j < fields.length; j++)
+            if (name.equalsIgnoreCase(fields[j].getFieldName())) {
+                if (found >= 0) return -1;
+                found = j;
+            }
+        return found;
     }
 
     private static String names(i.Field[] fields) {
