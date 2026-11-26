@@ -29,14 +29,24 @@ final class SchemaPaths {
         this.terms = query.toLowerCase(Locale.ROOT).replace('_', ' ').replace('-', ' ').trim().split("\\s+");
     }
 
+    /** Several searches at once, comma-separated ("latitude, speed, station type"): one section each. */
     static String find(i.Element root, String query) {
         if (query == null || query.isBlank())
             throw new IllegalArgumentException("query is required (a word to look for, e.g. 'pedestrian')");
+        String[] parts = java.util.Arrays.stream(query.split("[,;\\n]")).map(String::trim).filter(x -> !x.isEmpty())
+                .distinct().limit(8).toArray(String[]::new);
+        if (parts.length <= 1) return findOne(root, query, MAX_HITS);
+        StringBuilder sb = new StringBuilder();
+        for (String q : parts) sb.append(sb.length() == 0 ? "" : "\n\n").append(findOne(root, q, 12));
+        return sb.toString();
+    }
+
+    private static String findOne(i.Element root, String query, int maxHits) {
         SchemaPaths sp = new SchemaPaths(query);
         sp.walk(root, "", 0);
         // shallow paths first (the message's own fields before the same type nested in containers); stable
         sp.hits.sort(java.util.Comparator.comparingInt(h -> depth(h.substring(0, h.indexOf("  ")))));
-        if (sp.hits.size() > MAX_HITS) sp.hits.subList(MAX_HITS, sp.hits.size()).clear();
+        if (sp.hits.size() > maxHits) sp.hits.subList(maxHits, sp.hits.size()).clear();
         if (sp.hits.isEmpty())
             return "No field, alternative or value of this message matches '" + query.trim() + "'.";
         StringBuilder sb = new StringBuilder();
